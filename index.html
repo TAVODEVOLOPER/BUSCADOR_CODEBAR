@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f3d5e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Cable Scan BW04</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <strong>Cable Scan</strong>
+    <small id="dataInfo">cargando datos…</small>
+  </div>
+  <div class="top-actions">
+    <button class="btn ghost" id="btnCols" title="Elegir columnas">▦ Columnas</button>
+    <button class="btn ghost" id="btnSettings" title="Datos y ajustes">⚙</button>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-tab="scan">📷 Escanear</button>
+  <button class="tab" data-tab="search">🔎 Buscar</button>
+  <button class="tab" data-tab="list">📋 Lista <span class="badge" id="listCount">0</span></button>
+</nav>
+
+<main>
+  <!-- ESCANEAR -->
+  <section id="tab-scan" class="panel active">
+    <div class="scanbox">
+      <div class="video-wrap" id="videoWrap" hidden>
+        <video id="video" playsinline muted></video>
+        <div class="reticle"></div>
+        <div class="video-btns">
+          <button class="btn small" id="btnTorch" hidden>🔦</button>
+          <button class="btn small" id="btnSwitchCam" hidden>🔄</button>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn primary big" id="btnCam">📷 Activar cámara</button>
+      </div>
+      <div class="row wedge">
+        <input id="scanInput" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+               placeholder="Lector USB / Bluetooth o escribe el tag y pulsa Enter">
+        <button class="btn" id="btnGo">Buscar</button>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="listMode">
+        <span><strong>Modo lista (varios códigos)</strong><br>
+        <small>Cada lectura se añade a la lista sin abrir la ficha.</small></span>
+      </label>
+      <div id="lastScan" class="last" hidden></div>
+      <p class="hint">Lector USB/Bluetooth: ponlo en modo teclado (HID). Basta con tener esta pantalla abierta; no hace falta tocar el campo.</p>
+    </div>
+  </section>
+
+  <!-- BUSCAR -->
+  <section id="tab-search" class="panel">
+    <input id="q" type="search" placeholder="Parte del tag (ej. CKA32-BR03)…" autocomplete="off">
+    <div class="chips" id="statusChips"></div>
+    <div id="results" class="results"></div>
+  </section>
+
+  <!-- LISTA -->
+  <section id="tab-list" class="panel">
+    <div class="list-bar">
+      <button class="btn primary" id="btnXlsx">⬇ Excel</button>
+      <button class="btn" id="btnCsv">⬇ CSV</button>
+      <button class="btn" id="btnCopy">📋 Copiar</button>
+      <button class="btn" id="btnSheet">☁ Google Sheet</button>
+      <button class="btn danger" id="btnClear">🗑 Vaciar</button>
+    </div>
+    <div class="hint" id="listHint"></div>
+    <div class="table-wrap"><table id="listTable"></table></div>
+  </section>
+</main>
+
+<!-- FICHA DEL CABLE -->
+<div id="view" class="overlay" hidden>
+  <div class="sheet">
+    <div class="sheet-head">
+      <button class="btn ghost" id="vBack">← Volver</button>
+      <button class="btn small" id="vAddList">+ Lista</button>
+    </div>
+    <div class="sheet-body" id="vBody"></div>
+  </div>
+</div>
+
+<!-- ELEGIR COLUMNAS -->
+<div id="colsModal" class="overlay" hidden>
+  <div class="sheet narrow">
+    <div class="sheet-head">
+      <strong>Columnas a mostrar</strong>
+      <button class="btn ghost" id="cClose">Cerrar</button>
+    </div>
+    <div class="seg">
+      <button class="segbtn active" data-target="ficha">En la ficha</button>
+      <button class="segbtn" data-target="lista">En lista / exportación</button>
+    </div>
+    <div class="cols-tools">
+      <input id="cFilter" type="search" placeholder="Filtrar columnas…">
+      <button class="btn small" data-preset="AU">A–U</button>
+      <button class="btn small" data-preset="all">Todas</button>
+      <button class="btn small" data-preset="none">Ninguna</button>
+    </div>
+    <div class="sheet-body" id="cList"></div>
+  </div>
+</div>
+
+<!-- AJUSTES -->
+<div id="setModal" class="overlay" hidden>
+  <div class="sheet narrow">
+    <div class="sheet-head">
+      <strong>Datos y ajustes</strong>
+      <button class="btn ghost" id="sClose">Cerrar</button>
+    </div>
+    <div class="sheet-body settings">
+      <h3>Actualizar la tabla</h3>
+      <p class="muted" id="sInfo"></p>
+      <button class="btn primary" id="sImport">📥 Importar Excel (.xlsx)</button>
+      <input type="file" id="fileExcel" accept=".xlsx,.xlsm,.xls,.csv" hidden>
+      <button class="btn" id="sRepo">🔄 Recargar data.json del repositorio</button>
+
+      <h3>Desde Google Drive / Sheets</h3>
+      <label>URL CSV publicada de la hoja CABLEADO
+        <input id="sCsvUrl" type="url" placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?output=csv">
+      </label>
+      <button class="btn" id="sCsv">☁ Importar desde esa URL</button>
+
+      <label>URL de Apps Script (para enviar la lista a tu Google Sheet)
+        <input id="sScriptUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec">
+      </label>
+      <label>Nombre de la pestaña destino
+        <input id="sSheetName" type="text" placeholder="ESCANEOS">
+      </label>
+
+      <h3>Copia de seguridad</h3>
+      <p class="muted">Notas, fotos y PDF se guardan solo en este dispositivo.</p>
+      <button class="btn" id="sBackup">💾 Exportar copia (.json)</button>
+      <button class="btn" id="sRestore">♻ Restaurar copia</button>
+      <input type="file" id="fileBackup" accept=".json" hidden>
+      <button class="btn" id="sNotesXlsx">📝 Exportar anotaciones (Excel)</button>
+    </div>
+  </div>
+</div>
+
+<!-- VISOR DE FOTO -->
+<div id="lightbox" class="overlay dark" hidden>
+  <img id="lbImg" alt="">
+  <div class="lb-btns">
+    <button class="btn" id="lbClose">Cerrar</button>
+    <button class="btn danger" id="lbDel">Borrar</button>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<input type="file" id="filePdf" accept="application/pdf" multiple hidden>
+<input type="file" id="filePhoto" accept="image/*" capture="environment" hidden>
+<input type="file" id="filePhotoGal" accept="image/*" multiple hidden>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/zxing.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

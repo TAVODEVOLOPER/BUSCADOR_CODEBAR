@@ -1,0 +1,15 @@
+{
+  "name": "Cable Scan BW04",
+  "short_name": "Cable Scan",
+  "description": "Escanea el código de barras de un cable y consulta su ficha, PDF de pulling, fotos y notas.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f3d5e",
+  "theme_color": "#0f3d5e",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
