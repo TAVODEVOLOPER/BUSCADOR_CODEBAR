@@ -1,10 +1,13 @@
-/* Cable Scan BW04 — app estática (sin servidor). Datos y archivos se guardan en el dispositivo (IndexedDB). */
+/* Cable Scan BW04 — app estática (sin servidor propio).
+   Tabla y PDF: solo lectura desde tu Google. Notas y fotos: las añade el equipo por tag.
+   Todo se guarda también en el dispositivo (IndexedDB) para trabajar sin cobertura. */
 'use strict';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const norm = s => String(s ?? '').trim().toUpperCase().replace(/\s+/g, '');
+const isWide = () => window.matchMedia('(min-width:760px)').matches;
 
 /* ---------- IndexedDB ---------- */
 const DB = (() => {
@@ -43,27 +46,26 @@ const LS = {
   get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } },
 };
-let DATA = null;            // {columns:[{letter,name}], rows:[[...]], generado, origen, fuente}
+let DATA = null;            // {columns:[{letter,name}], rows:[[...]], generado, origen, fuente, hash}
 let IDX = new Map();        // tag normalizado -> fila
-let COL = new Map();        // nombre columna -> índice
-let TAGI = 0, STATI = -1;
+let COL = new Map();        // nombre de columna -> índice
+let TAGI = 0, STATI = -1, DATEI = -1;
 let scanList = LS.get('scanList', []);      // [{tag, code, found, time}]
-let flags = new Map();      // tag -> {notes,files}
+let flags = new Map();      // tag -> {notes, photos}
+let PDFS = [];              // PDF de Drive: [{id, name, date, key}]
+let PDFHASH = '';
 let current = -1;           // fila abierta
 let pickerTarget = 'ficha';
+let searchLimit = 60;
 
-const DEF_FICHA_END = 20;   // columna U (índice 20)
+const DEF_FICHA_END = 20;   // columna U
 const DEF_LISTA = ['CABLE_NUMBER', 'Status Actual', 'Fecha de Status', 'Tipo de Incidencia', 'Descripcion adicional'];
 
 function colsSel(kind) {
   const saved = LS.get('cols_' + kind, null);
+  if (saved) return saved.filter(n => COL.has(n));
   const names = DATA.columns.map(c => c.name);
-  if (saved) {
-    const ok = saved.filter(n => COL.has(n));
-    if (ok.length || saved.length === 0) return ok;
-  }
-  if (kind === 'ficha') return names.slice(0, DEF_FICHA_END + 1);
-  return DEF_LISTA.filter(n => COL.has(n));
+  return kind === 'ficha' ? names.slice(0, DEF_FICHA_END + 1) : DEF_LISTA.filter(n => COL.has(n));
 }
 
 /* ---------- Datos ---------- */
@@ -73,12 +75,32 @@ function setData(d, fuente) {
   COL = new Map(d.columns.map((c, i) => [c.name, i]));
   TAGI = COL.get(d.tagCol || 'CABLE_NUMBER') ?? 3;
   STATI = COL.has('Status Actual') ? COL.get('Status Actual') : -1;
+  DATEI = COL.has('Fecha de Status') ? COL.get('Fecha de Status') : -1;
   IDX = new Map();
   d.rows.forEach((r, i) => IDX.set(norm(r[TAGI]), i));
-  $('#dataInfo').textContent = `${d.rows.length} cables · ${d.columns.length} col. · ${d.generado || ''} · ${d.fuente === 'local' ? 'importado' : 'repositorio'}`;
-  buildChips();
-  renderSearch();
-  renderList();
+
+  const src = d.fuente === 'cloud' ? 'Google Sheet' : d.fuente === 'local' ? 'importada' : 'repositorio';
+  $('#dataInfo').textContent = `${d.rows.length.toLocaleString('es-ES')} cables, ${d.columns.length} columnas, ${src}`;
+  $('#dataInfo').title = d.generado ? `Actualizada ${d.generado}` : '';
+
+  // Columnas: se fija la selección inicial y se avisa de las que aparezcan después
+  const names = d.columns.map(c => c.name);
+  const known = LS.get('knownCols', null);
+  if (!known) {
+    LS.set('knownCols', names);
+    if (!LS.get('cols_ficha', null)) LS.set('cols_ficha', names.slice(0, DEF_FICHA_END + 1));
+    if (!LS.get('cols_lista', null)) LS.set('cols_lista', DEF_LISTA.filter(n => COL.has(n)));
+  } else {
+    const fresh = names.filter(n => !known.includes(n));
+    if (fresh.length) {
+      LS.set('knownCols', [...known, ...fresh]);
+      LS.set('newCols', [...new Set([...LS.get('newCols', []), ...fresh])]);
+      toast(`Hay ${fresh.length} ${fresh.length === 1 ? 'columna nueva' : 'columnas nuevas'}. Actívalas en Columnas.`, 5000);
+    }
+  }
+  buildChips(); renderSearch(); renderList();
+  if (current >= d.rows.length) current = -1;
+  if (current >= 0) renderCable(); else renderEmpty();
 }
 
 async function loadData() {
@@ -88,11 +110,12 @@ async function loadData() {
     const r = await fetch('data.json?' + Date.now(), { cache: 'no-store' });
     if (r.ok) repo = await r.json();
   } catch { }
-  if (stored && stored.fuente === 'local') { setData(stored); return; }
+  if (stored && (stored.fuente === 'local' || stored.fuente === 'cloud')) { setData(stored); return; }
   if (repo) { repo.fuente = 'repo'; await DB.put('meta', repo, 'data'); setData(repo); return; }
   if (stored) { setData(stored); return; }
-  $('#dataInfo').textContent = 'sin datos: importa tu Excel (⚙)';
-  toast('No hay datos. Abre ⚙ e importa tu Excel.');
+  $('#dataInfo').textContent = 'Sin tabla todavía';
+  renderEmpty();
+  toast('Todavía no hay tabla. Conecta tu Google en Ajustes.', 5000);
 }
 
 /* Convierte una hoja (array de arrays) en la tabla principal */
@@ -151,7 +174,7 @@ function workbookToData(wb, origen) {
 
 async function importFile(file) {
   try {
-    toast('Leyendo ' + file.name + '…');
+    toast('Leyendo ' + file.name);
     const isCsv = /\.csv$/i.test(file.name);
     const wb = isCsv
       ? XLSX.read(await file.text(), { type: 'string' })
@@ -160,25 +183,25 @@ async function importFile(file) {
     d.fuente = 'local';
     await DB.put('meta', d, 'data');
     setData(d, 'local');
-    toast(`Importado: ${d.rows.length} cables, hoja ${d.hoja}`);
-  } catch (e) { toast('Error: ' + e.message, 5000); }
+    toast(`Importados ${d.rows.length} cables de la hoja ${d.hoja}`);
+  } catch (e) { toast('No se pudo importar el archivo: ' + e.message, 5000); }
 }
 
 async function importCsvUrl() {
   const url = $('#sCsvUrl').value.trim();
-  if (!url) return toast('Pega primero la URL CSV');
+  if (!url) return toast('Pega primero la URL del CSV');
   LS.set('csvUrl', url);
   try {
-    toast('Descargando…');
+    toast('Descargando');
     const r = await fetch(url);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const wb = XLSX.read(await r.text(), { type: 'string' });
-    const d = workbookToData(wb, 'Google Sheet');
+    const d = workbookToData(wb, 'Google Sheet (CSV)');
     d.fuente = 'local';
     await DB.put('meta', d, 'data');
     setData(d, 'local');
-    toast(`Importado: ${d.rows.length} cables`);
-  } catch (e) { toast('No se pudo importar: ' + e.message, 5000); }
+    toast(`Importados ${d.rows.length} cables`);
+  } catch (e) { toast('No se pudo importar desde esa URL: ' + e.message, 5000); }
 }
 
 async function reloadRepo() {
@@ -189,11 +212,11 @@ async function reloadRepo() {
     d.fuente = 'repo';
     await DB.put('meta', d, 'data');
     setData(d, 'repo');
-    toast('Datos del repositorio cargados (' + d.rows.length + ')');
+    toast(`Cargados ${d.rows.length} cables del repositorio`);
   } catch (e) { toast('No se pudo leer data.json: ' + e.message, 5000); }
 }
 
-/* ---------- Búsqueda de tag ---------- */
+/* ---------- Buscar el tag leído ---------- */
 function findRows(code) {
   const c = norm(code).replace(/\.+$/, '');
   if (!c) return [];
@@ -208,53 +231,43 @@ function findRows(code) {
 
 const statusClass = s => {
   s = String(s || '').toUpperCase();
-  if (s.startsWith('TENDIDO')) return 'ok';
-  if (s.startsWith('INCIDENCIA')) return 'bad';
-  if (['COIL', 'CORTE', 'WORKING', 'MEDICIÓN', 'PENDING', 'CORREO'].some(x => s.startsWith(x))) return 'warn';
-  return '';
+  if (s.startsWith('TENDIDO')) return 'st-ok';
+  if (s.startsWith('INCIDENCIA')) return 'st-bad';
+  if (['COIL', 'CORTE', 'WORKING', 'MEDICIÓN', 'PENDING', 'CORREO'].some(x => s.startsWith(x))) return 'st-warn';
+  return 'st-na';
 };
 const fmtVal = v => /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split('-').reverse().join('/') : v;
+const sentence = s => { s = String(s || '').toLowerCase(); return s.charAt(0).toUpperCase() + s.slice(1); };
 
-/* ---------- Manejo de un código leído ---------- */
+/* ---------- Un código leído ---------- */
 let lastHandled = { code: '', t: 0 };
-function handleCode(code, source) {
+function handleCode(code) {
   code = String(code || '').trim();
   if (!code) return;
   const now = Date.now();
   if (code === lastHandled.code && now - lastHandled.t < 2500) return;   // anti-rebote
   lastHandled = { code, t: now };
-  if (!DATA) return toast('Aún no hay datos cargados');
+  if (!DATA) return toast('Todavía no hay tabla cargada');
 
   const rows = findRows(code);
-  const listMode = $('#listMode').checked;
-
-  if (listMode) {
+  if ($('#listMode').checked) {
     const tag = rows.length === 1 ? DATA.rows[rows[0]][TAGI] : code;
     const found = rows.length === 1;
-    const dup = scanList.some(x => norm(x.tag) === norm(tag));
-    if (dup) { beep(false); showLast('dup', `Ya estaba en la lista: ${tag}`); return; }
-    scanList.push({ tag, code, found, multi: rows.length > 1, time: new Date().toISOString() });
+    if (scanList.some(x => norm(x.tag) === norm(tag))) { beep(false); showLast('dup', tag, 'Ya estaba en la lista'); return; }
+    scanList.push({ tag, code, found, time: new Date().toISOString() });
     LS.set('scanList', scanList);
-    renderList();
-    beep(found);
-    showLast(found ? 'ok' : 'bad', found ? `✔ ${tag}` : (rows.length > 1 ? `⚠ ${rows.length} coincidencias para "${code}" (añadido tal cual)` : `✖ No encontrado: ${code}`));
+    renderList(); beep(found);
+    showLast(found ? 'ok' : 'missing', tag, found ? `Añadido a la lista (${scanList.length})` : (rows.length > 1 ? `${rows.length} coincidencias; añadido tal cual` : 'No está en la tabla; añadido tal cual'));
     return;
   }
-
-  if (rows.length === 1) { beep(true); openCable(rows[0]); }
-  else if (rows.length > 1) { beep(true); showMatches(code, rows); }
-  else { beep(false); showLast('bad', `✖ No encontrado: ${code}`); }
+  if (rows.length === 1 && rows[0] === current && $('#view').classList.contains('open')) return;   // la cámara sigue viendo el mismo cable
+  if (rows.length === 1) { beep(true); openCable(rows[0], true); }
+  else if (rows.length > 1) { beep(true); setTab('search'); $('#q').value = code; searchLimit = 60; renderSearch(); }
+  else { beep(false); showLast('missing', code, 'No está en la tabla. Revisa el código o busca una parte del tag.'); }
 }
 
-function showLast(cls, text) {
-  const el = $('#lastScan');
-  el.hidden = false; el.className = 'last ' + cls; el.textContent = text;
-}
-
-function showMatches(code, rows) {
-  $$('.tab').find(t => t.dataset.tab === 'search').click();
-  $('#q').value = code;
-  renderSearch();
+function showLast(kind, tag, text) {
+  $('#lastScan').innerHTML = `<div class="marker pop ${kind}"><span class="sleeve"></span><span class="mk-body"><b>${esc(tag)}</b><small>${esc(text)}</small></span></div>`;
 }
 
 /* ---------- Sonido ---------- */
@@ -273,19 +286,19 @@ function beep(ok) {
 const cam = { stream: null, on: false, paused: false, detector: null, reader: null, devices: [], devIdx: -1, torch: false, timer: null };
 
 async function startCam() {
-  if (!navigator.mediaDevices?.getUserMedia) return toast('Este navegador no permite cámara (se necesita HTTPS)', 4000);
+  if (!navigator.mediaDevices?.getUserMedia) return toast('Este navegador no permite usar la cámara. Abre la app desde HTTPS.', 4500);
   try {
-    const video = { width: { ideal: 1280 }, height: { ideal: 720 } };
+    const video = { width: { ideal: 1920 }, height: { ideal: 1080 } };   // las etiquetas largas necesitan resolución
     if (cam.devIdx >= 0 && cam.devices[cam.devIdx]) video.deviceId = { exact: cam.devices[cam.devIdx].deviceId };
     else video.facingMode = { ideal: 'environment' };
     cam.stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
-  } catch (e) { return toast('No pude abrir la cámara: ' + e.name, 4000); }
+  } catch (e) { return toast(e.name === 'NotAllowedError' ? 'Permite el acceso a la cámara en el navegador y vuelve a intentarlo.' : 'No se pudo abrir la cámara: ' + e.name, 5000); }
 
   const v = $('#video');
   v.srcObject = cam.stream;
   await v.play().catch(() => { });
   $('#videoWrap').hidden = false;
-  $('#btnCam').textContent = '⏹ Detener cámara';
+  $('#btnCam').textContent = 'Detener cámara';
   cam.on = true;
 
   try { cam.devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch { }
@@ -293,6 +306,10 @@ async function startCam() {
   const track = cam.stream.getVideoTracks()[0];
   const caps = track.getCapabilities ? track.getCapabilities() : {};
   $('#btnTorch').hidden = !caps.torch;
+  cam.zoom = caps.zoom ? { min: caps.zoom.min, max: caps.zoom.max, cur: caps.zoom.min } : null;
+  $('#btnZoom').hidden = !cam.zoom;
+  $('#btnZoom').textContent = '1×';
+  if (caps.focusMode && caps.focusMode.includes('continuous')) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => { });
 
   if ('BarcodeDetector' in window) {
     let formats = ['code_128', 'code_39', 'code_93', 'ean_13', 'ean_8', 'itf', 'codabar', 'qr_code', 'data_matrix', 'pdf417', 'upc_a', 'upc_e'];
@@ -301,24 +318,62 @@ async function startCam() {
     const loop = async () => {
       if (!cam.on) return;
       if (!cam.paused && v.readyState >= 2) {
-        try {
-          const r = await cam.detector.detect(v);
-          if (r.length) handleCode(r[0].rawValue, 'cam');
-        } catch { }
+        try { const r = await cam.detector.detect(v); if (r.length) handleCode(r[0].rawValue); } catch { }
       }
       cam.timer = setTimeout(loop, 130);
     };
     loop();
   } else if (window.ZXing) {
-    const Z = ZXing;
+    // Lector de reserva (iPhone/Safari): se decodifica solo la zona del recuadro, a resolución completa.
+    // Recortar quita el ruido del papel y permite leer etiquetas largas a menos píxeles por barra.
+    const cv = document.createElement('canvas');
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    let n = 0;
+    const loop = () => {
+      if (!cam.on) return;
+      if (!cam.paused && v.readyState >= 2 && v.videoWidth) {
+        try {
+          const vis = visibleRect(v.videoWidth, v.videoHeight, v.clientWidth, v.clientHeight);
+          const r = (n++ % 3 === 2) ? vis : reticleRect(vis);   // dos de cada tres veces solo el recuadro; la tercera, todo lo visible
+          cv.width = r.w; cv.height = r.h;
+          cx.drawImage(v, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+          const px = cx.getImageData(0, 0, r.w, r.h).data;
+          const lum = new Uint8ClampedArray(r.w * r.h);
+          for (let i = 0, j = 0; i < px.length; i += 4, j++) lum[j] = (px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000;
+          const text = zxDecode(lum, r.w, r.h);
+          if (text) handleCode(text);
+        } catch { }
+      }
+      cam.timer = setTimeout(loop, 110);
+    };
+    loop();
+  }
+}
+
+/* Geometría del lector de reserva: qué parte del vídeo ve la persona y cuál es el recuadro */
+function visibleRect(W, H, boxW, boxH) {
+  const ba = (boxW && boxH) ? boxW / boxH : 4 / 3, va = W / H;
+  let w = W, h = H, x = 0, y = 0;
+  if (va > ba) { w = Math.round(H * ba); x = Math.round((W - w) / 2); }
+  else { h = Math.round(W / ba); y = Math.round((H - h) / 2); }
+  return { x, y, w, h };
+}
+const reticleRect = v => ({ x: v.x + Math.round(v.w * 0.10), y: v.y + Math.round(v.h * 0.20), w: Math.round(v.w * 0.80), h: Math.round(v.h * 0.60) });
+
+let zxReader = null;
+function zxDecode(lum, w, h) {
+  if (!window.ZXing) return null;
+  const Z = ZXing;
+  if (!zxReader) {
     const hints = new Map();
     hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.CODE_93,
     Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.ITF, Z.BarcodeFormat.CODABAR,
     Z.BarcodeFormat.QR_CODE, Z.BarcodeFormat.DATA_MATRIX, Z.BarcodeFormat.PDF_417]);
     hints.set(Z.DecodeHintType.TRY_HARDER, true);
-    cam.reader = new Z.BrowserMultiFormatReader(hints, 150);
-    cam.reader.decodeFromStream(cam.stream, v, (res) => { if (res && !cam.paused) handleCode(res.getText(), 'cam'); });
+    zxReader = new Z.MultiFormatReader(); zxReader.setHints(hints);
   }
+  try { return zxReader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.RGBLuminanceSource(lum, w, h)))).getText(); }
+  catch { return null; }
 }
 
 function stopCam() {
@@ -327,15 +382,23 @@ function stopCam() {
   try { cam.reader && cam.reader.reset(); } catch { }
   cam.reader = null;
   if (cam.stream) cam.stream.getTracks().forEach(t => t.stop());
-  cam.stream = null; cam.torch = false;
+  cam.stream = null; cam.torch = false; cam.zoom = null;
   $('#videoWrap').hidden = true;
-  $('#btnCam').textContent = '📷 Activar cámara';
+  $('#btnCam').textContent = 'Activar cámara';
 }
 
 async function toggleTorch() {
   const t = cam.stream?.getVideoTracks()[0]; if (!t) return;
   cam.torch = !cam.torch;
-  try { await t.applyConstraints({ advanced: [{ torch: cam.torch }] }); } catch { toast('Linterna no disponible'); }
+  try { await t.applyConstraints({ advanced: [{ torch: cam.torch }] }); } catch { toast('Este dispositivo no permite encender la linterna'); }
+}
+
+async function cycleZoom() {
+  const t = cam.stream?.getVideoTracks()[0]; if (!t || !cam.zoom) return;
+  const steps = [1, 2, 3].map(s => Math.min(cam.zoom.max, Math.max(cam.zoom.min, s))).filter((s, i, a) => a.indexOf(s) === i);
+  const next = steps[(steps.indexOf(cam.zoom.cur) + 1) % steps.length];
+  try { await t.applyConstraints({ advanced: [{ zoom: next }] }); cam.zoom.cur = next; $('#btnZoom').textContent = next + '×'; }
+  catch { toast('Este dispositivo no permite hacer zoom'); }
 }
 
 async function switchCam() {
@@ -344,7 +407,7 @@ async function switchCam() {
   stopCam(); await startCam();
 }
 
-/* ---------- Lector USB / Bluetooth (modo teclado) ---------- */
+/* ---------- Lector USB o Bluetooth (modo teclado) ---------- */
 (() => {
   let buf = '', last = 0;
   document.addEventListener('keydown', e => {
@@ -355,7 +418,7 @@ async function switchCam() {
     if (now - last > 120) buf = '';
     last = now;
     if (e.key === 'Enter' || e.key === 'Tab') {
-      if (buf.length >= 4) { e.preventDefault(); handleCode(buf, 'kbd'); }
+      if (buf.length >= 4) { e.preventDefault(); handleCode(buf); }
       buf = ''; return;
     }
     if (e.key.length === 1) buf += e.key;
@@ -363,12 +426,13 @@ async function switchCam() {
 })();
 
 /* ---------- Pestañas ---------- */
-$$('.tab').forEach(t => t.addEventListener('click', () => {
-  $$('.tab').forEach(x => x.classList.toggle('active', x === t));
-  $$('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t.dataset.tab));
-  if (t.dataset.tab === 'search') renderSearch();
-  if (t.dataset.tab === 'list') renderList();
-}));
+function setTab(name) {
+  $('#app').dataset.tab = name;
+  $$('.tab').forEach(x => { const on = x.dataset.tab === name; x.classList.toggle('active', on); x.setAttribute('aria-selected', on); });
+  $$('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  if (DATA) { if (name === 'search') renderSearch(); if (name === 'list') renderList(); }
+}
+$$('.tab').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
 
 /* ---------- Buscar ---------- */
 let statusFilter = '';
@@ -376,137 +440,235 @@ function buildChips() {
   const el = $('#statusChips');
   if (STATI < 0) { el.innerHTML = ''; return; }
   const cnt = {};
-  DATA.rows.forEach(r => { const s = r[STATI] || '(vacío)'; cnt[s] = (cnt[s] || 0) + 1; });
+  DATA.rows.forEach(r => { const s = r[STATI] || '(sin status)'; cnt[s] = (cnt[s] || 0) + 1; });
   const items = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
-  el.innerHTML = `<button class="chip ${statusFilter === '' ? 'on' : ''}" data-s="">Todos</button>` +
-    items.map(([s, n]) => `<button class="chip ${statusFilter === s ? 'on' : ''}" data-s="${esc(s)}">${esc(s)} (${n})</button>`).join('');
+  el.innerHTML = `<button class="filter ${statusFilter === '' ? 'on' : ''}" data-s="">Todos ${DATA.rows.length}</button>` +
+    items.map(([s, n]) => `<button class="filter ${statusFilter === s ? 'on' : ''}" data-s="${esc(s)}">${esc(sentence(s))} ${n}</button>`).join('');
 }
 $('#statusChips').addEventListener('click', e => {
-  const b = e.target.closest('.chip'); if (!b) return;
-  statusFilter = b.dataset.s; buildChips(); renderSearch();
+  const b = e.target.closest('.filter'); if (!b) return;
+  statusFilter = b.dataset.s; searchLimit = 60; buildChips(); renderSearch();
 });
-$('#q').addEventListener('input', renderSearch);
+$('#q').addEventListener('input', () => { searchLimit = 60; renderSearch(); });
 
 function renderSearch() {
   if (!DATA) return;
   const q = norm($('#q').value);
-  const out = [];
+  const hits = [];
   for (let i = 0; i < DATA.rows.length; i++) {
     const r = DATA.rows[i];
-    if (statusFilter && (r[STATI] || '(vacío)') !== statusFilter) continue;
+    if (statusFilter && (r[STATI] || '(sin status)') !== statusFilter) continue;
     if (q && !norm(r[TAGI]).includes(q)) continue;
-    out.push(i);
-    if (out.length >= 60) break;
+    hits.push(i);
   }
-  $('#results').innerHTML = out.map(i => {
-    const r = DATA.rows[i], st = STATI >= 0 ? r[STATI] : '';
-    const f = flags.get(r[TAGI]);
-    return `<div class="item" data-i="${i}"><div><div class="tag">${esc(r[TAGI])}</div>
-      <small>${f ? (f.notes ? '📝' + f.notes + ' ' : '') + (f.files ? '📎' + f.files : '') : ''}</small></div>
-      <span class="pill ${statusClass(st)}">${esc(st || '—')}</span></div>`;
-  }).join('') || '<p class="muted">Sin resultados.</p>';
+  const shown = hits.slice(0, searchLimit);
+  $('#results').innerHTML = shown.map(i => {
+    const r = DATA.rows[i], st = STATI >= 0 ? r[STATI] : '', f = flags.get(r[TAGI]);
+    const bits = [];
+    if (f?.notes) bits.push(`${f.notes} ${f.notes === 1 ? 'nota' : 'notas'}`);
+    if (f?.photos) bits.push(`${f.photos} ${f.photos === 1 ? 'foto' : 'fotos'}`);
+    if (pdfsFor(r[TAGI]).length) bits.push('PDF');
+    return `<button class="row ${statusClass(st)} ${i === current ? 'sel' : ''}" data-i="${i}"><span class="t">${esc(r[TAGI])}</span>
+      <span class="m"><span class="s">${esc(st ? sentence(st) : 'Sin status')}</span>${bits.map(b => `<span>${b}</span>`).join('')}</span></button>`;
+  }).join('') || '<p class="empty">Ningún cable coincide. Prueba con otra parte del tag o quita el filtro de status.</p>';
+  if (hits.length > shown.length) {
+    $('#results').insertAdjacentHTML('beforeend', `<button class="btn more" id="btnMore">Mostrar más (${hits.length - shown.length} restantes)</button>`);
+  }
 }
 $('#results').addEventListener('click', e => {
-  const it = e.target.closest('.item'); if (it) openCable(+it.dataset.i);
+  if (e.target.id === 'btnMore') { searchLimit += 100; renderSearch(); return; }
+  const it = e.target.closest('.row'); if (it) openCable(+it.dataset.i, true);
 });
+
+/* ---------- PDF de pulling (los pone el propietario en Drive; aquí solo se leen) ---------- */
+function hasTag(key, t) {
+  let i = key.indexOf(t);
+  while (i >= 0) {
+    const prev = key[i - 1], next = key[i + t.length];
+    const startOk = !prev || /[A-Z0-9]/.test(t[0]) === false || !/[A-Z0-9]/.test(prev);
+    const endOk = !next || !/[A-Z0-9]/.test(next);   // que ...BR03 no coincida con ...BR030
+    if (startOk && endOk) return true;
+    i = key.indexOf(t, i + 1);
+  }
+  return false;
+}
+function pdfsFor(tag) {
+  if (!PDFS.length) return [];
+  const t = norm(tag), t2 = t.replace(/^#?HKF\./, '');
+  return PDFS.filter(p => hasTag(p.key, t) || (t2 !== t && hasTag(p.key, t2)));
+}
+const setPdfs = (list, hash) => {
+  // los espacios se conservan: marcan dónde termina el tag dentro del nombre del archivo
+  PDFS = (list || []).map(p => ({ ...p, key: String(p.name).replace(/\.pdf$/i, '').toUpperCase().replace(/\s+/g, ' ') }));
+  PDFHASH = hash || '';
+};
+async function ensurePdf(p) {
+  const key = `pdf:${p.id}:${p.date}`;
+  const hit = await DB.get('meta', key).catch(() => null);
+  if (hit) return hit;
+  const j = await apiGet('pdf', { id: p.id });
+  const bin = atob(j.data), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  const blob = new Blob([u8], { type: 'application/pdf' });
+  await DB.put('meta', blob, key).catch(() => { });
+  return blob;
+}
 
 /* ---------- Ficha del cable ---------- */
 async function refreshFlags() {
   const [n, f] = await Promise.all([DB.all('notes'), DB.all('files')]);
   flags = new Map();
-  n.forEach(x => { const o = flags.get(x.tag) || { notes: 0, files: 0 }; o.notes++; flags.set(x.tag, o); });
-  f.forEach(x => { const o = flags.get(x.tag) || { notes: 0, files: 0 }; o.files++; flags.set(x.tag, o); });
+  const get = t => flags.get(t) || (flags.set(t, { notes: 0, photos: 0 }), flags.get(t));
+  n.forEach(x => get(x.tag).notes++);
+  f.filter(x => x.kind === 'photo').forEach(x => get(x.tag).photos++);
 }
 
-async function openCable(i) {
-  current = i; cam.paused = true;
-  $('#view').hidden = false;
-  await renderCable();
+function renderEmpty() {
+  if (current >= 0) return;
+  $('#vBody').innerHTML = `<div class="d-empty"><h2>Ningún cable abierto</h2><p>Escanea un código o busca un tag y aquí verás su ficha, el PDF de pulling, las fotos y las notas.</p></div>`;
+  $('#vAddList').hidden = true;
 }
 
-async function renderCable() {
+function openCable(i, animate) {
+  current = i;
+  $('#view').classList.add('open');
+  $('#vAddList').hidden = false;
+  cam.paused = !isWide();
+  if (!isWide() && !(history.state && history.state.detail)) history.pushState({ detail: 1 }, '');
+  renderCable(animate);
+  $$('.row.sel').forEach(r => r.classList.remove('sel'));
+  $$(`.row[data-i="${i}"]`).forEach(r => r.classList.add('sel'));
+}
+
+function closeCable() {
+  $('#view').classList.remove('open');
+  current = -1; cam.paused = false;
+  renderEmpty(); renderSearch(); renderList();
+}
+
+async function renderCable(animate) {
+  if (current < 0) return;
   const r = DATA.rows[current], tag = r[TAGI];
   const hideEmpty = LS.get('hideEmpty', false);
   const sel = colsSel('ficha');
+  const newCols = LS.get('newCols', []);
   const st = STATI >= 0 ? r[STATI] : '';
+  const stDate = DATEI >= 0 ? r[DATEI] : '';
   const [notes, files] = await Promise.all([DB.byTag('notes', tag), DB.byTag('files', tag)]);
+  if (current < 0 || DATA.rows[current][TAGI] !== tag) return;   // se cerró o cambió mientras cargaba
   notes.sort((a, b) => b.date.localeCompare(a.date));
+  const syncMark = x => x.localOnly ? '<span class="sync">Solo en este dispositivo</span>' : x.synced ? '<span class="sync ok">En la nube</span>' : (cloud.on() ? '<span class="sync wait">Pendiente de subir</span>' : '');
+  const PIX = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
 
   const kv = sel.map(n => {
     const c = DATA.columns[COL.get(n)], v = r[COL.get(n)];
     if (hideEmpty && !v) return '';
-    return `<div class="kv"><div class="k"><b>${esc(c.letter)}</b>${esc(c.name)}</div><div class="v ${v ? '' : 'empty'}">${v ? esc(fmtVal(v)) : '—'}</div></div>`;
+    return `<div class="kv"><span class="l">${esc(c.letter)}</span><span class="n">${esc(c.name)}</span><span class="v ${v ? '' : 'none'}">${v ? esc(fmtVal(v)) : 'Sin dato'}</span></div>`;
   }).join('');
 
-  const pdfs = files.filter(f => f.kind === 'pdf'), photos = files.filter(f => f.kind === 'photo');
-  $('#vAddList').textContent = scanList.some(x => norm(x.tag) === norm(tag)) ? '✔ En lista' : '+ Lista';
+  const drivePdfs = pdfsFor(tag);
+  const legacy = files.filter(f => f.kind === 'pdf');
+  const photos = files.filter(f => f.kind === 'photo');
+  const pdfRows = drivePdfs.map(p => `<div class="item"><span class="nm">${esc(p.name)}<small>Actualizado ${esc(p.date)}</small></span><span class="go"><button class="btn small" data-pdf="${esc(p.id)}">Abrir</button></span></div>`).join('')
+    + legacy.map(f => `<div class="item"><span class="nm">${esc(f.name)}${syncMark(f)}</span><span class="go"><button class="btn small" data-open="${f.id}">Abrir</button></span></div>`).join('');
+  const pdfEmpty = !cloud.on() && !PDFS.length ? 'Conecta tu Google en Ajustes para ver los PDF de pulling.' : 'Todavía no hay PDF de pulling para este cable.';
 
+  $('#vAddList').textContent = scanList.some(x => norm(x.tag) === norm(tag)) ? 'En la lista' : 'Añadir a la lista';
   $('#vBody').innerHTML = `
-    <div class="vhead"><div class="vtag">${esc(tag)}</div><div><span class="pill ${statusClass(st)}">${esc(st || 'Sin status')}</span></div></div>
-    <label class="toggle"><input type="checkbox" id="hideEmpty" ${hideEmpty ? 'checked' : ''}> Ocultar columnas vacías</label>
-    <div class="grid">${kv || '<div class="kv"><div class="v empty">Sin columnas seleccionadas (▦ Columnas)</div></div>'}</div>
+    <div class="d-top">
+      <div class="marker ${animate ? 'pop' : ''}"><span class="sleeve"></span><span class="mk-body"><b>${esc(tag)}</b></span><button class="btn small quiet copy" id="btnCopyTag">Copiar</button></div>
+      <div class="d-status ${statusClass(st)}"><i></i><div><b>${esc(st ? sentence(st) : 'Sin status')}</b>${stDate ? `<small>Desde ${esc(fmtVal(stDate))}</small>` : ''}</div></div>
+    </div>
 
-    <div class="sec"><h3>📄 Pulling (PDF)</h3>
-      <div class="files">${pdfs.map(f => `<div class="file"><span>${esc(f.name)}</span>
-        <span class="btn-row"><button class="btn small" data-open="${f.id}">Abrir</button><button class="btn small danger" data-delf="${f.id}">✕</button></span></div>`).join('') || '<small class="muted">Sin PDF cargado.</small>'}</div>
-      <div class="btn-row" style="margin-top:8px"><button class="btn" id="addPdf">+ Cargar PDF</button></div></div>
+    <label class="opt"><input type="checkbox" id="hideEmpty" ${hideEmpty ? 'checked' : ''}> Ocultar las columnas sin dato</label>
+    <div class="kvs">${kv || '<p class="empty">No hay columnas elegidas. Pulsa Columnas para elegirlas.</p>'}</div>
 
-    <div class="sec"><h3>📷 Fotos</h3>
-      <div class="photos">${photos.map(f => `<img data-photo="${f.id}" alt="${esc(f.name)}" src="${URL.createObjectURL(f.blob)}">`).join('')}</div>
-      <div class="btn-row" style="margin-top:8px"><button class="btn" id="addPhoto">📸 Tomar foto</button><button class="btn" id="addPhotoGal">🖼 Desde galería</button></div></div>
-
-    <div class="sec"><h3>📝 Anotaciones</h3>
-      <textarea id="noteText" placeholder="Escribe una anotación…"></textarea>
-      <div class="btn-row" style="margin-top:8px"><button class="btn primary" id="saveNote">Guardar nota</button></div>
-      ${notes.map(n => `<div class="note"><small><span>${esc(new Date(n.date).toLocaleString('es-ES'))}</span><button class="btn small danger" data-deln="${n.id}">✕</button></small><p>${esc(n.text)}</p></div>`).join('')}
+    <div class="sections">
+      <div>
+        <div class="sec"><h3>PDF de pulling</h3>
+          ${pdfRows || `<p class="empty">${pdfEmpty}</p>`}
+        </div>
+        <div class="sec" style="margin-top:28px"><h3>Fotos</h3>
+          ${photos.length ? `<div class="photos">${photos.map(f => `<img data-photo="${f.id}" alt="${esc(f.name)}" ${f.blob ? `src="${URL.createObjectURL(f.blob)}"` : `src="${PIX}" data-lazy="1"`}>`).join('')}</div>` : '<p class="empty">Todavía no hay fotos de este cable.</p>'}
+          <div class="btn-row"><button class="btn primary" id="addPhoto">Hacer foto</button><button class="btn" id="addPhotoGal">Elegir de la galería</button></div>
+        </div>
+      </div>
+      <div class="sec"><h3>Notas</h3>
+        <label class="field" style="margin-top:6px"><span>Nueva nota</span><textarea id="noteText" placeholder="Qué has visto o qué falta"></textarea></label>
+        <div class="btn-row"><button class="btn primary" id="saveNote">Guardar nota</button></div>
+        ${notes.map(n => `<div class="note"><div class="by"><span>${esc(new Date(n.date).toLocaleString('es-ES'))}${n.author ? ', ' + esc(n.author) : ''} ${syncMark(n)}</span><button class="btn small danger" data-deln="${n.id}">Borrar</button></div><p>${esc(n.text)}</p></div>`).join('')}
+      </div>
     </div>`;
+
+  // fotos que solo están en la nube: se descargan al abrir la ficha
+  $$('#vBody img[data-lazy]').forEach(img => {
+    const f = photos.find(p => p.id === +img.dataset.photo);
+    ensureBlob(f).then(b => { img.src = URL.createObjectURL(b); img.removeAttribute('data-lazy'); })
+      .catch(() => { img.alt = 'No disponible sin conexión'; });
+  });
 }
 
 $('#vBody').addEventListener('click', async e => {
-  const t = e.target;
+  const t = e.target.closest('button,img'); if (!t || current < 0) return;
   const tag = DATA.rows[current][TAGI];
-  if (t.id === 'addPdf') $('#filePdf').click();
-  else if (t.id === 'addPhoto') $('#filePhoto').click();
+  if (t.id === 'addPhoto') $('#filePhoto').click();
   else if (t.id === 'addPhotoGal') $('#filePhotoGal').click();
+  else if (t.id === 'btnCopyTag') { try { await navigator.clipboard.writeText(tag); toast('Tag copiado'); } catch { toast('No se pudo copiar el tag'); } }
   else if (t.id === 'saveNote') {
-    const text = $('#noteText').value.trim(); if (!text) return;
-    await DB.put('notes', { tag, text, date: new Date().toISOString() });
+    const text = $('#noteText').value.trim();
+    if (!text) return toast('Escribe algo en la nota antes de guardarla');
+    await DB.put('notes', { uid: newUid(), tag, text, date: new Date().toISOString(), author: cloud.author(), synced: false });
     await refreshFlags(); await renderCable(); toast('Nota guardada');
+    syncCloud(true);
   } else if (t.dataset.deln) {
-    if (!confirm('¿Borrar la nota?')) return;
-    await DB.del('notes', +t.dataset.deln); await refreshFlags(); await renderCable();
-  } else if (t.dataset.delf) {
-    if (!confirm('¿Borrar el archivo?')) return;
-    await DB.del('files', +t.dataset.delf); await refreshFlags(); await renderCable();
+    if (!confirm('¿Borrar esta nota? Se borrará también para el resto del equipo.')) return;
+    const n = await DB.get('notes', +t.dataset.deln);
+    if (n.synced && !(await cloudDelete('delNote', { id: n.uid }))) return;
+    await DB.del('notes', n.id); await refreshFlags(); await renderCable();
+  } else if (t.dataset.pdf) {
+    const p = PDFS.find(x => x.id === t.dataset.pdf);
+    const w = window.open('', '_blank');   // se abre ya, antes de descargar, para que el navegador no lo bloquee
+    try {
+      toast('Abriendo el PDF');
+      const b = await ensurePdf(p);
+      const url = URL.createObjectURL(b);
+      if (w) w.location = url; else location.href = url;
+    } catch (err) { if (w) w.close(); toast('No se pudo abrir el PDF: ' + err.message, 5000); }
   } else if (t.dataset.open) {
-    const f = await DB.get('files', +t.dataset.open);
-    window.open(URL.createObjectURL(new Blob([f.blob], { type: 'application/pdf' })), '_blank');
+    const w = window.open('', '_blank');
+    try {
+      const f = await DB.get('files', +t.dataset.open);
+      const b = await ensureBlob(f);
+      const url = URL.createObjectURL(new Blob([b], { type: 'application/pdf' }));
+      if (w) w.location = url; else location.href = url;
+    } catch (err) { if (w) w.close(); toast('No se pudo abrir el PDF: ' + err.message, 4500); }
   } else if (t.dataset.photo) openLightbox(+t.dataset.photo);
-  else if (t.id === 'hideEmpty') { LS.set('hideEmpty', t.checked); renderCable(); }
 });
+$('#vBody').addEventListener('change', e => { if (e.target.id === 'hideEmpty') { LS.set('hideEmpty', e.target.checked); renderCable(); } });
 
-$('#vBack').addEventListener('click', () => { $('#view').hidden = true; current = -1; cam.paused = false; renderSearch(); renderList(); });
+$('#vBack').addEventListener('click', () => { if (history.state && history.state.detail) history.back(); else closeCable(); });
+window.addEventListener('popstate', () => { if (!isWide() && current >= 0) closeCable(); });
 $('#vAddList').addEventListener('click', () => {
+  if (current < 0) return;
   const tag = DATA.rows[current][TAGI];
-  if (scanList.some(x => norm(x.tag) === norm(tag))) return toast('Ya está en la lista');
+  if (scanList.some(x => norm(x.tag) === norm(tag))) return toast('Ese cable ya está en la lista');
   scanList.push({ tag, code: tag, found: true, time: new Date().toISOString() });
-  LS.set('scanList', scanList); renderList(); $('#vAddList').textContent = '✔ En lista'; toast('Añadido a la lista');
+  LS.set('scanList', scanList); renderList(); $('#vAddList').textContent = 'En la lista'; toast('Añadido a la lista');
 });
 
-/* archivos */
-async function addFiles(fileList, kind) {
+/* fotos */
+async function addPhotos(fileList) {
   const tag = DATA.rows[current][TAGI];
   for (const f of fileList) {
-    let blob = f;
-    if (kind === 'photo') blob = await shrinkImage(f);
-    await DB.put('files', { tag, kind, name: f.name || (kind === 'photo' ? 'foto.jpg' : 'archivo.pdf'), type: blob.type, blob, date: new Date().toISOString() });
+    const blob = await shrinkImage(f);
+    await DB.put('files', { uid: newUid(), tag, kind: 'photo', name: f.name || 'foto.jpg', type: blob.type, blob, date: new Date().toISOString(), author: cloud.author(), synced: false });
   }
   await refreshFlags(); await renderCable();
-  toast(kind === 'pdf' ? 'PDF guardado' : 'Foto guardada');
+  toast(fileList.length > 1 ? 'Fotos guardadas' : 'Foto guardada');
+  syncCloud(true);
 }
-$('#filePdf').addEventListener('change', e => { addFiles(e.target.files, 'pdf'); e.target.value = ''; });
-$('#filePhoto').addEventListener('change', e => { addFiles(e.target.files, 'photo'); e.target.value = ''; });
-$('#filePhotoGal').addEventListener('change', e => { addFiles(e.target.files, 'photo'); e.target.value = ''; });
+$('#filePhoto').addEventListener('change', e => { if (e.target.files.length) addPhotos(e.target.files); e.target.value = ''; });
+$('#filePhotoGal').addEventListener('change', e => { if (e.target.files.length) addPhotos(e.target.files); e.target.value = ''; });
 
 async function shrinkImage(file, max = 1600) {
   try {
@@ -521,16 +683,21 @@ async function shrinkImage(file, max = 1600) {
 let lbId = null;
 async function openLightbox(id) {
   const f = await DB.get('files', id); if (!f) return;
-  lbId = id; $('#lbImg').src = URL.createObjectURL(f.blob); $('#lightbox').hidden = false;
+  try {
+    const b = await ensureBlob(f);
+    lbId = id; $('#lbImg').src = URL.createObjectURL(b); $('#lightbox').hidden = false;
+  } catch { toast('Esta foto no está disponible sin conexión'); }
 }
 $('#lbClose').addEventListener('click', () => { $('#lightbox').hidden = true; });
 $('#lbDel').addEventListener('click', async () => {
-  if (!confirm('¿Borrar la foto?')) return;
+  if (!confirm('¿Borrar esta foto? Se borrará también para el resto del equipo.')) return;
+  const f = await DB.get('files', lbId);
+  if (f.synced && !(await cloudDelete('delFile', { uid: f.uid }))) return;
   await DB.del('files', lbId); $('#lightbox').hidden = true; await refreshFlags(); renderCable();
 });
 
 /* ---------- Lista de escaneos ---------- */
-function listColumns() { return colsSel('lista'); }
+const listColumns = () => colsSel('lista');
 
 function listMatrix(withNotes = true) {
   const cols = listColumns();
@@ -551,26 +718,26 @@ async function attachNotesToList() {
 
 function renderList() {
   if (!DATA) return;
-  $('#listCount').textContent = scanList.length;
+  const c = $('#listCount'); c.textContent = scanList.length; c.dataset.n = scanList.length;
   const cols = listColumns();
   const nf = scanList.filter(x => !x.found).length;
   $('#listHint').textContent = scanList.length
-    ? `${scanList.length} códigos${nf ? ` · ${nf} sin encontrar` : ''}. Columnas elegidas en ▦ Columnas → "En lista / exportación".`
-    : 'Activa el "Modo lista" en Escanear y lee varios códigos; aquí aparecerán.';
+    ? `${scanList.length} ${scanList.length === 1 ? 'código' : 'códigos'}${nf ? `, ${nf} sin encontrar` : ''}. Las columnas se eligen en Columnas, pestaña "En la lista y el Excel".`
+    : 'La lista está vacía. Activa el modo lista en Escanear y lee varios códigos; aparecerán aquí.';
   const t = $('#listTable');
-  t.innerHTML = '<thead><tr><th>#</th><th>Tag</th>' + cols.filter(c => c !== DATA.tagCol).map(c => `<th>${esc(c)}</th>`).join('') + '<th></th></tr></thead><tbody>' +
+  t.innerHTML = '<thead><tr><th>#</th><th>Tag</th>' + cols.filter(n => n !== DATA.tagCol).map(n => `<th>${esc(n)}</th>`).join('') + '<th></th></tr></thead><tbody>' +
     scanList.map((x, n) => {
       const ri = IDX.get(norm(x.tag));
       return `<tr class="${x.found ? '' : 'nf'}" data-n="${n}"><td>${n + 1}</td><td class="tagc">${esc(x.tag)}</td>` +
-        cols.filter(c => c !== DATA.tagCol).map(c => `<td>${ri === undefined ? '' : esc(fmtVal(DATA.rows[ri][COL.get(c)]))}</td>`).join('') +
-        `<td><button data-del="${n}" title="Quitar">✕</button></td></tr>`;
+        cols.filter(k => k !== DATA.tagCol).map(k => `<td>${ri === undefined ? '' : esc(fmtVal(DATA.rows[ri][COL.get(k)]))}</td>`).join('') +
+        `<td><button class="x" data-del="${n}" aria-label="Quitar de la lista">✕</button></td></tr>`;
     }).join('') + '</tbody>';
 }
 $('#listTable').addEventListener('click', e => {
   const d = e.target.closest('[data-del]');
   if (d) { scanList.splice(+d.dataset.del, 1); LS.set('scanList', scanList); renderList(); return; }
   const tr = e.target.closest('tr[data-n]');
-  if (tr) { const x = scanList[+tr.dataset.n]; const ri = IDX.get(norm(x.tag)); if (ri !== undefined) openCable(ri); }
+  if (tr) { const x = scanList[+tr.dataset.n]; const ri = IDX.get(norm(x.tag)); if (ri !== undefined) openCable(ri, true); }
 });
 
 function download(blob, name) {
@@ -578,9 +745,10 @@ function download(blob, name) {
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
 }
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+const needList = () => scanList.length ? true : (toast('La lista está vacía. Escanea algunos cables primero.'), false);
 
 $('#btnXlsx').addEventListener('click', async () => {
-  if (!scanList.length) return toast('La lista está vacía');
+  if (!needList()) return;
   await attachNotesToList();
   const { head, rows } = listMatrix();
   const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
@@ -589,7 +757,7 @@ $('#btnXlsx').addEventListener('click', async () => {
   XLSX.writeFile(wb, `escaneos_${stamp()}.xlsx`);
 });
 $('#btnCsv').addEventListener('click', async () => {
-  if (!scanList.length) return toast('La lista está vacía');
+  if (!needList()) return;
   await attachNotesToList();
   const { head, rows } = listMatrix();
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -597,24 +765,22 @@ $('#btnCsv').addEventListener('click', async () => {
   download(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `escaneos_${stamp()}.csv`);
 });
 $('#btnCopy').addEventListener('click', async () => {
-  if (!scanList.length) return toast('La lista está vacía');
+  if (!needList()) return;
   await attachNotesToList();
   const { head, rows } = listMatrix();
   const tsv = [head, ...rows].map(r => r.map(v => String(v ?? '').replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n');
-  try { await navigator.clipboard.writeText(tsv); toast('Copiado: pégalo en Google Sheets (Ctrl+V)'); }
-  catch { toast('No pude copiar; usa Excel o CSV'); }
+  try { await navigator.clipboard.writeText(tsv); toast('Lista copiada. Pégala en Google Sheets con Ctrl+V.'); }
+  catch { toast('No se pudo copiar. Descarga el Excel o el CSV.'); }
 });
 $('#btnSheet').addEventListener('click', async () => {
-  if (!scanList.length) return toast('La lista está vacía');
-  const url = LS.get('scriptUrl', '');
-  if (!url) { toast('Configura la URL de Apps Script en ⚙', 4000); return; }
+  if (!needList()) return;
+  if (!cloud.on()) { toast('Conecta tu Google (URL y clave) en Ajustes', 4000); return; }
   await attachNotesToList();
   const { head, rows } = listMatrix();
   try {
-    await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ sheet: LS.get('sheetName', 'ESCANEOS') || 'ESCANEOS', header: head, rows }) });
-    toast('Enviado. Revisa tu Google Sheet.', 3500);
-  } catch (e) { toast('No se pudo enviar: ' + e.message, 4000); }
+    const j = await apiPost('scans', { sheet: LS.get('sheetName', 'ESCANEOS') || 'ESCANEOS', header: head, rows });
+    toast(`Enviadas ${j.added} filas a tu Google Sheet`, 3500);
+  } catch (e) { toast('No se pudo enviar la lista: ' + e.message, 4500); }
 });
 $('#btnClear').addEventListener('click', () => {
   if (!scanList.length) return;
@@ -627,9 +793,10 @@ function openCols() { $('#colsModal').hidden = false; renderPicker(); }
 function renderPicker() {
   const f = norm($('#cFilter').value);
   const sel = new Set(colsSel(pickerTarget));
+  const fresh = new Set(LS.get('newCols', []));
   $$('.segbtn').forEach(b => b.classList.toggle('active', b.dataset.target === pickerTarget));
   $('#cList').innerHTML = DATA.columns.map(c => (!f || norm(c.name).includes(f) || norm(c.letter) === f) ?
-    `<label class="citem"><input type="checkbox" data-n="${esc(c.name)}" ${sel.has(c.name) ? 'checked' : ''}><b>${esc(c.letter)}</b><span>${esc(c.name)}</span></label>` : '').join('');
+    `<label class="citem"><input type="checkbox" data-n="${esc(c.name)}" ${sel.has(c.name) ? 'checked' : ''}><b>${esc(c.letter)}</b><span>${esc(c.name)}</span>${fresh.has(c.name) ? '<em>Nueva</em>' : ''}</label>` : '').join('');
 }
 $('#cList').addEventListener('change', e => {
   const cur = new Set(colsSel(pickerTarget));
@@ -645,75 +812,221 @@ $$('[data-preset]').forEach(b => b.addEventListener('click', () => {
   LS.set('cols_' + pickerTarget, p === 'all' ? names : p === 'none' ? [] : names.slice(0, DEF_FICHA_END + 1));
   renderPicker(); renderList();
 }));
-$('#cClose').addEventListener('click', () => { $('#colsModal').hidden = true; if (current >= 0) renderCable(); });
-$('#btnCols').addEventListener('click', () => DATA ? openCols() : toast('Aún no hay datos'));
+$('#cClose').addEventListener('click', () => { $('#colsModal').hidden = true; LS.set('newCols', []); if (current >= 0) renderCable(); });
+$('#btnCols').addEventListener('click', () => DATA ? openCols() : toast('Todavía no hay tabla cargada'));
 
 /* ---------- Ajustes ---------- */
-$('#btnSettings').addEventListener('click', () => {
+function saveSettingsFields(start = true) {
+  LS.set('scriptUrl', $('#sScriptUrl').value.trim()); LS.set('cloudToken', $('#sToken').value.trim());
+  LS.set('author', $('#sAuthor').value.trim());
+  LS.set('sheetName', $('#sSheetName').value.trim() || 'ESCANEOS'); LS.set('csvUrl', $('#sCsvUrl').value.trim());
+  if (start) startCloud();
+}
+$('#btnSettings').addEventListener('click', async () => {
   $('#setModal').hidden = false;
-  $('#sInfo').textContent = DATA ? `Tabla actual: ${DATA.rows.length} cables, hoja "${DATA.hoja || '?'}", origen ${DATA.origen || '?'}, ${DATA.generado || ''}.` : 'Sin datos todavía.';
-  $('#sCsvUrl').value = LS.get('csvUrl', ''); $('#sScriptUrl').value = LS.get('scriptUrl', ''); $('#sSheetName').value = LS.get('sheetName', 'ESCANEOS');
+  $('#sCsvUrl').value = LS.get('csvUrl', ''); $('#sScriptUrl').value = LS.get('scriptUrl', ''); $('#sToken').value = LS.get('cloudToken', '');
+  $('#sAuthor').value = LS.get('author', ''); $('#sSheetName').value = LS.get('sheetName', 'ESCANEOS');
+  const [n, f] = await Promise.all([DB.all('notes'), DB.all('files')]);
+  const pend = n.filter(x => !x.synced).length + f.filter(x => !x.synced && !x.localOnly && x.kind === 'photo').length;
+  $('#sInfo').textContent = (DATA ? `Tabla: ${DATA.rows.length} cables y ${DATA.columns.length} columnas, ${DATA.generado || ''}. ` : 'Sin tabla todavía. ')
+    + (cloud.on() ? `Conectado. ${PDFS.length} PDF en Drive. Pendientes de subir: ${pend}.` : 'Sin conectar. Pega la URL y la clave que salen de la instalación del script.');
 });
-$('#sClose').addEventListener('click', () => {
-  LS.set('scriptUrl', $('#sScriptUrl').value.trim()); LS.set('sheetName', $('#sSheetName').value.trim() || 'ESCANEOS'); LS.set('csvUrl', $('#sCsvUrl').value.trim());
-  $('#setModal').hidden = true;
+$('#sClose').addEventListener('click', () => { saveSettingsFields(); $('#setModal').hidden = true; });
+$('#sPull').addEventListener('click', async () => { saveSettingsFields(false); await pullTable(false); });
+$('#sSync').addEventListener('click', async () => { saveSettingsFields(false); await syncCloud(false); });
+$('#sPing').addEventListener('click', async () => {
+  saveSettingsFields(false);
+  if (!cloud.on()) return toast('Falta la URL o la clave');
+  try { await apiGet('ping'); toast('Conexión correcta con tu Google'); }
+  catch (e) { toast('No se pudo conectar: ' + e.message, 5000); }
 });
 $('#sImport').addEventListener('click', () => $('#fileExcel').click());
 $('#fileExcel').addEventListener('change', e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; });
 $('#sRepo').addEventListener('click', reloadRepo);
-$('#sExportJson').addEventListener('click', () => {
-  if (!DATA) return toast('No hay datos que exportar');
-  const { fuente, ...out } = DATA;
-  download(new Blob([JSON.stringify(out)], { type: 'application/json' }), 'data.json');
-  toast('data.json descargado: súbelo a GitHub con ese mismo nombre', 4500);
-});
 $('#sCsv').addEventListener('click', importCsvUrl);
+$('#sExportJson').addEventListener('click', () => {
+  if (!DATA) return toast('No hay tabla que exportar');
+  const { fuente, hash, ...out } = DATA;
+  download(new Blob([JSON.stringify(out)], { type: 'application/json' }), 'data.json');
+  toast('data.json descargado. Súbelo a GitHub con ese mismo nombre.', 4500);
+});
 
-/* copia de seguridad */
+/* copia de seguridad (solo notas y fotos) */
 const blobToDataUrl = b => new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(b); });
 $('#sBackup').addEventListener('click', async () => {
   const notes = await DB.all('notes'), files = await DB.all('files');
-  const fx = []; for (const f of files) fx.push({ ...f, id: undefined, blob: undefined, data: await blobToDataUrl(f.blob) });
+  const fx = []; for (const f of files) if (f.blob) fx.push({ ...f, id: undefined, blob: undefined, data: await blobToDataUrl(f.blob) });
   const out = { v: 1, date: new Date().toISOString(), notes: notes.map(n => ({ ...n, id: undefined })), files: fx, scanList };
-  download(new Blob([JSON.stringify(out)], { type: 'application/json' }), `cablescan_backup_${stamp()}.json`);
+  download(new Blob([JSON.stringify(out)], { type: 'application/json' }), `cablescan_copia_${stamp()}.json`);
 });
 $('#sRestore').addEventListener('click', () => $('#fileBackup').click());
 $('#fileBackup').addEventListener('change', async e => {
   const file = e.target.files[0]; e.target.value = ''; if (!file) return;
   try {
     const j = JSON.parse(await file.text());
-    for (const n of j.notes || []) await DB.put('notes', n);
-    for (const f of j.files || []) { const blob = await (await fetch(f.data)).blob(); const { data, ...rest } = f; await DB.put('files', { ...rest, blob }); }
+    for (const n of j.notes || []) await DB.put('notes', { ...n, uid: newUid(), synced: false });
+    for (const f of j.files || []) { const blob = await (await fetch(f.data)).blob(); const { data, ...rest } = f; await DB.put('files', { ...rest, blob, uid: newUid(), synced: false }); }
     if (j.scanList?.length) { scanList = j.scanList; LS.set('scanList', scanList); }
+    syncCloud(true);
     await refreshFlags(); renderList(); renderSearch(); toast('Copia restaurada');
-  } catch (err) { toast('Copia inválida: ' + err.message, 4000); }
+  } catch (err) { toast('Ese archivo no es una copia válida: ' + err.message, 4500); }
 });
 $('#sNotesXlsx').addEventListener('click', async () => {
   const notes = await DB.all('notes'), files = await DB.all('files');
-  if (!notes.length) return toast('No hay anotaciones');
+  if (!notes.length) return toast('Todavía no hay notas');
   const rows = notes.sort((a, b) => a.tag.localeCompare(b.tag) || a.date.localeCompare(b.date))
-    .map(n => [n.tag, new Date(n.date).toLocaleString('es-ES'), n.text, files.filter(f => f.tag === n.tag && f.kind === 'pdf').length, files.filter(f => f.tag === n.tag && f.kind === 'photo').length]);
-  const ws = XLSX.utils.aoa_to_sheet([['CABLE_NUMBER', 'Fecha', 'Anotación', 'PDF', 'Fotos'], ...rows]);
-  ws['!cols'] = [{ wch: 36 }, { wch: 18 }, { wch: 60 }, { wch: 6 }, { wch: 6 }];
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'ANOTACIONES');
-  XLSX.writeFile(wb, `anotaciones_${stamp()}.xlsx`);
+    .map(n => [n.tag, new Date(n.date).toLocaleString('es-ES'), n.author || '', n.text, files.filter(f => f.tag === n.tag && f.kind === 'photo').length]);
+  const ws = XLSX.utils.aoa_to_sheet([['CABLE_NUMBER', 'Fecha', 'Autor', 'Nota', 'Fotos'], ...rows]);
+  ws['!cols'] = [{ wch: 36 }, { wch: 18 }, { wch: 14 }, { wch: 60 }, { wch: 7 }];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'NOTAS');
+  XLSX.writeFile(wb, `notas_${stamp()}.xlsx`);
 });
 
 /* ---------- Entradas de escaneo ---------- */
 $('#btnCam').addEventListener('click', () => cam.on ? stopCam() : startCam());
 $('#btnTorch').addEventListener('click', toggleTorch);
+$('#btnZoom').addEventListener('click', cycleZoom);
 $('#btnSwitchCam').addEventListener('click', switchCam);
-$('#scanInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); const v = e.target.value; e.target.value = ''; lastHandled = { code: '', t: 0 }; handleCode(v, 'input'); }
+$('#manualForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const i = $('#scanInput'); const v = i.value; i.value = '';
+  lastHandled = { code: '', t: 0 }; handleCode(v);
 });
-$('#btnGo').addEventListener('click', () => { const i = $('#scanInput'); const v = i.value; i.value = ''; lastHandled = { code: '', t: 0 }; handleCode(v, 'input'); });
 $('#listMode').checked = LS.get('listMode', false);
 $('#listMode').addEventListener('change', e => LS.set('listMode', e.target.checked));
 document.addEventListener('visibilitychange', () => { if (document.hidden && cam.on) stopCam(); });
 
+/* ---------- Nube: Google Sheets + Drive vía Apps Script ---------- */
+const cloud = {
+  on: () => !!(LS.get('scriptUrl', '') && LS.get('cloudToken', '')),
+  author: () => LS.get('author', ''),
+};
+const MAX_CLOUD = 15 * 1024 * 1024;   // fotos mayores se quedan solo en el dispositivo
+const newUid = () => (crypto.randomUUID ? crypto.randomUUID() : 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+
+async function apiGet(action, params = {}) {
+  const q = new URLSearchParams({ action, token: LS.get('cloudToken', ''), ...params });
+  const r = await fetch(LS.get('scriptUrl', '') + '?' + q);
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || 'error del servidor');
+  return j;
+}
+async function apiPost(action, payload = {}) {
+  const r = await fetch(LS.get('scriptUrl', ''), {
+    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, token: LS.get('cloudToken', ''), ...payload }),
+  });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || 'error del servidor');
+  return j;
+}
+const fileToB64 = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(b); });
+
+/* Tabla desde la hoja de Google (solo lectura); solo se descarga si cambió */
+async function pullTable(silent) {
+  if (!cloud.on()) { if (!silent) toast('Conecta tu Google (URL y clave) en Ajustes', 4000); return false; }
+  try {
+    if (!silent) toast('Comprobando la tabla en Google Sheets', 6000);
+    const have = DATA && DATA.fuente === 'cloud' && DATA.hash ? DATA.hash : '';
+    const j = await apiGet('data', have ? { hash: have } : {});
+    if (j.same) { if (!silent) toast('La tabla ya está al día'); return true; }
+    const d = { generado: j.generado, origen: 'Google Sheet', hoja: j.hoja, tagCol: 'CABLE_NUMBER', columns: j.columns, rows: j.rows, fuente: 'cloud', hash: j.hash };
+    await DB.put('meta', d, 'data');
+    setData(d, 'cloud');
+    if (!silent) toast(`Tabla actualizada: ${d.rows.length} cables`);
+    return true;
+  } catch (e) { if (!silent) toast('No se pudo leer la hoja: ' + e.message, 5000); return false; }
+}
+
+/* Fotos que solo existen en la nube: se descargan al necesitarlas */
+const inflight = new Map();
+function ensureBlob(f) {
+  if (f.blob) return Promise.resolve(f.blob);
+  if (inflight.has(f.uid)) return inflight.get(f.uid);
+  const p = (async () => {
+    const j = await apiGet('file', { uid: f.uid });
+    const bin = atob(j.data), u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    f.blob = new Blob([u8], { type: j.mime || f.type || '' });
+    await DB.put('files', f);
+    return f.blob;
+  })().finally(() => inflight.delete(f.uid));
+  inflight.set(f.uid, p);
+  return p;
+}
+
+/* Borrado en la nube; devuelve true si se puede borrar también en local */
+async function cloudDelete(action, payload) {
+  if (!cloud.on()) return true;
+  try { await apiPost(action, payload); return true; }
+  catch (e) { toast('No se pudo borrar en la nube. Comprueba la conexión y vuelve a intentarlo.', 4500); return false; }
+}
+
+/* Sincronización: sube lo pendiente y trae lo de los demás */
+let syncing = false, resync = false, cloudStarted = false;
+function startCloud() {
+  if (cloudStarted || !cloud.on()) return;
+  cloudStarted = true;
+  pullTable(true).then(() => syncCloud(true));
+  window.addEventListener('online', () => syncCloud(true));
+  setInterval(() => { if (!document.hidden) syncCloud(true); }, 90000);
+}
+async function syncCloud(silent) {
+  if (!cloud.on()) return;
+  if (syncing) { resync = true; return; }
+  if (!navigator.onLine) { if (!silent) toast('Sin conexión. Se sincronizará al volver.'); return; }
+  syncing = true;
+  try {
+    const [ln, lf] = await Promise.all([DB.all('notes'), DB.all('files')]);
+    for (const n of ln) {
+      if (n.synced) continue;
+      if (!n.uid) n.uid = newUid();
+      await apiPost('addNote', { id: n.uid, tag: n.tag, text: n.text, date: n.date, author: n.author || '' });
+      n.synced = true; await DB.put('notes', n);
+    }
+    for (const f of lf) {
+      if (f.synced || f.localOnly || !f.blob) continue;
+      if (!f.uid) f.uid = newUid();
+      if (f.kind !== 'photo' || f.blob.size > MAX_CLOUD) {
+        f.localOnly = true; await DB.put('files', f);
+        if (!silent && f.kind === 'photo') toast(`"${f.name}" pesa más de 15 MB y se queda solo en este dispositivo`, 5000);
+        continue;
+      }
+      await apiPost('upload', { uid: f.uid, tag: f.tag, kind: 'photo', name: f.name, mime: f.type || f.blob.type || '', date: f.date, author: f.author || '', data: await fileToB64(f.blob) });
+      f.synced = true; await DB.put('files', f);
+    }
+
+    const s = await apiGet('sync', PDFHASH ? { pdfHash: PDFHASH } : {});
+    if (s.pdfs) { setPdfs(s.pdfs, s.pdfHash); await DB.put('meta', { hash: s.pdfHash, list: s.pdfs }, 'pdfs'); }
+    const notes = await DB.all('notes'), files = await DB.all('files');
+    const nUid = new Set(notes.map(x => x.uid)), fUid = new Set(files.map(x => x.uid));
+    const rn = new Set(s.notes.map(x => x.id)), rf = new Set(s.files.map(x => x.uid));
+    for (const n of s.notes) if (!nUid.has(n.id)) await DB.put('notes', { uid: n.id, tag: n.tag, text: n.text, date: n.date, author: n.author, synced: true });
+    for (const f of s.files) if (!fUid.has(f.uid)) await DB.put('files', { uid: f.uid, tag: f.tag, kind: f.kind, name: f.name, type: f.mime, date: f.date, author: f.author, synced: true });
+    for (const n of notes) if (n.synced && !rn.has(n.uid)) await DB.del('notes', n.id);          // borrada por otra persona
+    for (const f of files) if (f.synced && !rf.has(f.uid)) await DB.del('files', f.id);
+    await refreshFlags(); renderSearch();
+    if (current >= 0 && !($('#noteText') && $('#noteText').value)) await renderCable();
+    if (!silent) toast('Notas, fotos y PDF sincronizados');
+  } catch (e) { if (!silent) toast('No se pudo sincronizar: ' + e.message, 5000); }
+  finally { syncing = false; if (resync) { resync = false; syncCloud(true); } }
+}
+
+/* ---------- Instalar como app ---------- */
+let deferredInstall = null;
+const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function updateInstallUI() { $('#btnInstall').hidden = standalone() || !(deferredInstall || isIos()); }
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; updateInstallUI(); });
+window.addEventListener('appinstalled', () => { deferredInstall = null; updateInstallUI(); toast('App instalada'); });
+$('#btnInstall').addEventListener('click', async () => {
+  if (deferredInstall) { deferredInstall.prompt(); await deferredInstall.userChoice.catch(() => { }); deferredInstall = null; updateInstallUI(); }
+  else toast('En Safari: pulsa Compartir y después Añadir a pantalla de inicio.', 7000);
+});
+
 /* ---------- Utilidades ---------- */
 let toastT;
-function toast(msg, ms = 2200) {
+function toast(msg, ms = 2600) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
   clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, ms);
 }
@@ -722,6 +1035,13 @@ function toast(msg, ms = 2200) {
 (async function init() {
   try { navigator.storage?.persist?.(); } catch { }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+  updateInstallUI();
+  const tab = new URLSearchParams(location.search).get('tab');
+  if (['scan', 'search', 'list'].includes(tab)) setTab(tab);
+  renderEmpty();
   await refreshFlags().catch(() => { });
+  const pdfs = await DB.get('meta', 'pdfs').catch(() => null);
+  if (pdfs) setPdfs(pdfs.list, pdfs.hash);
   await loadData();
+  startCloud();
 })();

@@ -1,5 +1,8 @@
-const VERSION = 'cablescan-v2';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon.svg', 'icon-192.png',
+const VERSION = 'cablescan-v5';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png',
+  'icon-maskable-512.png', 'apple-touch-icon.png',
+  'fonts/b612-latin-400-normal.woff2', 'fonts/b612-latin-700-normal.woff2',
+  'fonts/b612-mono-latin-400-normal.woff2', 'fonts/b612-mono-latin-700-normal.woff2',
   'vendor/xlsx.full.min.js', 'vendor/zxing.min.js'];
 
 self.addEventListener('install', e => {

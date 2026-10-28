@@ -1,75 +1,82 @@
 # Cable Scan BW04
 
-App web (PWA) para escanear el código de barras de un cable, ver su ficha (columnas A–U de `Tabla_MAIN`, ampliable a las 119 columnas), cargar el PDF de pulling, tomar fotos, hacer anotaciones y escanear varios códigos a una lista exportable.
+App para escanear el código de barras de un cable y ver su ficha (columnas A–U de la tabla, ampliable a todas), el PDF de pulling, fotos y notas del equipo. Funciona en móvil, tablet y escritorio, y se instala como app.
 
-Funciona en el navegador del móvil o del PC. No necesita servidor.
+## Quién hace qué
 
-## 1. Subir a GitHub y publicar (una sola vez)
+| | Tú (propietario) | El equipo (la app) |
+|---|---|---|
+| Tabla de cables | La editas en tu Google Sheet. Puede crecer en filas y columnas. | Solo la lee. La app no tiene ninguna función para modificarla. |
+| PDF de pulling | Los copias a una carpeta de tu Drive. | Solo los abre. No pueden subirlos ni borrarlos. |
+| Notas y fotos de cada tag | También puedes. | Las añaden y las ven todos. |
 
-1. En GitHub: **New repository** → nombre `cable-scan` → **Private** si quieres que el código no sea público (ver nota de privacidad abajo) → Create.
-2. Sube **todo el contenido de esta carpeta** (incluida `data.json`, `vendor/` y el archivo oculto `.nojekyll`): *Add file → Upload files*, o con git:
-   ```
-   git init && git add . && git commit -m "Cable Scan"
-   git branch -M main
-   git remote add origin https://github.com/TU_USUARIO/cable-scan.git
-   git push -u origin main
-   ```
-3. **Settings → Pages → Build and deployment → Source: Deploy from a branch → Branch: `main` / `(root)` → Save.**
-4. En 1–2 minutos tendrás la URL `https://TU_USUARIO.github.io/cable-scan/`. Ábrela en el móvil y usa *Añadir a pantalla de inicio* para instalarla como app.
+El equipo no necesita acceso a tu Sheet ni a tu Drive: solo la dirección de la app y una clave.
 
-> **Privacidad:** GitHub Pages publica la web en una URL accesible por cualquiera que la conozca, aunque el repositorio sea privado (los repos privados con Pages requieren plan de pago de GitHub). `data.json` contiene los datos del cableado. Si son confidenciales, no lo subas al repositorio: deja que cada usuario importe el Excel desde la app (⚙ → Importar Excel); los datos se quedan solo en su dispositivo.
+## 1. Publicar la app en GitHub (una vez)
 
-## 2. Cómo se escanea
+1. En GitHub: **New repository** → `cable-scan` → Create.
+2. Sube **el contenido de esta carpeta** (con `.nojekyll`, `fonts/` y `vendor/`). **No subas la carpeta `extras/`**: lleva una copia de la tabla.
+3. **Settings → Pages → Deploy from a branch → `main` / `(root)` → Save.**
+4. En 1–2 minutos tendrás `https://TU_USUARIO.github.io/cable-scan/`.
 
-- **Cámara**: pestaña *Escanear* → *Activar cámara*. Usa el lector nativo del navegador (Chrome/Android) o ZXing como alternativa (iPhone/Safari). Botones de linterna y cambio de cámara cuando el dispositivo los permite. La cámara exige HTTPS (GitHub Pages ya lo es).
-- **Lector USB o Bluetooth**: ponlo en modo teclado (HID). Con la app abierta basta con disparar: el código se detecta aunque no hayas tocado ningún campo. También puedes escribir el tag y pulsar Enter.
-- **Modo lista (varios códigos)**: activa el interruptor; cada lectura se añade a la lista (sin duplicados, con pitido distinto si ya estaba o no se encontró). Desde la pestaña *Lista* exportas a **Excel, CSV, copiar (pegar en Google Sheets) o enviar directo a tu Google Sheet**.
-- El tag leído se busca exacto en `CABLE_NUMBER`; si no hay coincidencia exacta, busca por contenido (por ejemplo `CKA32-BR03`) y te muestra las coincidencias.
+## 2. Conectar con tu Google (5 minutos, una vez)
 
-## 3. Elegir columnas
+1. Sube tu Excel a Google Drive y ábrelo con **Google Sheets**. La pestaña con la tabla se llama **CABLEADO** y tiene los encabezados en la fila 1 (incluida `CABLE_NUMBER`).
+2. En esa hoja: **Extensiones → Apps Script**. Borra lo que haya y pega todo `apps-script.gs`.
+3. Cambia `TOKEN` por una frase larga y secreta.
+4. Arriba elige la función **`autorizar`** y pulsa **Ejecutar**. Acepta los permisos (si sale "Google no ha verificado esta app": *Configuración avanzada → Ir a … (no seguro)*; es tu propio script). Se crean las pestañas NOTAS, ARCHIVOS y PDF_INDEX y las carpetas **CableScan_PDF** y **CableScan_Fotos** en tu Drive.
+5. **Implementar → Nueva implementación → Aplicación web.** *Ejecutar como: Yo. Quién tiene acceso: Cualquier usuario.* Copia la URL que termina en `/exec`.
+6. Recarga la hoja y, en el menú nuevo **Cable Scan**, pulsa **Activar índice automático de PDF**.
+7. En la app: **Ajustes** → pega la URL y la clave, escribe tu nombre → **Probar conexión**. Cada persona del equipo repite este paso en su dispositivo.
 
-Botón **▦ Columnas**: dos selecciones independientes, *En la ficha* (por defecto A–U) y *En lista / exportación*. Con filtro por nombre, y atajos *A–U*, *Todas*, *Ninguna*. La elección se recuerda en el dispositivo.
+## 3. PDF de pulling
 
-## 4. Actualizar los datos desde tu Excel
+- Copia los PDF a la carpeta **CableScan_PDF** de tu Drive (se admiten subcarpetas).
+- **El nombre del archivo debe contener el tag completo del cable**, por ejemplo `#HKF.BW41=731.CKA32-BR03.WG20.pdf` o `Pulling #HKF.BW41=731.CKA32-BR03.WG20 rev2.pdf`. Da igual mayúsculas o minúsculas. Un PDF sirve a varios cables si su nombre incluye varios tags.
+- Con el índice automático, los PDF nuevos aparecen en la app en unos 30 minutos. Para verlos ya: menú **Cable Scan → Actualizar índice de PDF** en la hoja.
+- Si ya tienes los PDF en otra carpeta, pon su ID (el final de la URL de la carpeta) en `PDF_FOLDER_ID` del script.
+- Máximo 30 MB por PDF.
 
-Tienes tres caminos; el más sencillo es el A.
+## 4. Cuando la tabla crece
 
-**A. Importar el Excel desde la app (sin tocar GitHub)**
-⚙ → *Importar Excel (.xlsx)* → elige `CABLEADO CONEXIONADO Y TIMBRADO BW04.xlsx`. La app localiza la hoja con la tabla principal (`CABLEADO` / `Tabla_MAIN`) y reemplaza los datos en ese dispositivo. Las notas, fotos y PDF **no se pierden** (van por tag).
+Añade filas y columnas en la pestaña CABLEADO cuando quieras:
+- La app descarga la tabla al abrirse **solo si cambió** (ahorra datos móviles). También se puede forzar en **Ajustes → Actualizar la tabla ahora**.
+- Los cables nuevos se encuentran al escanear y al buscar.
+- Las columnas nuevas **no** se añaden solas a la ficha (para no cambiar lo que ve el equipo): la app avisa y las marca como "Nueva" en **Columnas**, donde se activan con un toque.
+- Mantén `CABLE_NUMBER` y los encabezados en la fila 1.
 
-**B0. Actualizar el repositorio SIN Python (todo desde el navegador)**
-1. En la app: ⚙ → *Importar Excel* y elige el Excel actualizado.
-2. ⚙ → *Descargar data.json (para subir a GitHub)*.
-3. En GitHub: *Add file → Upload files*, arrastra ese `data.json` (mismo nombre) → *Commit changes*.
-4. Espera 1–2 minutos; el resto de dispositivos lo recibe al abrir la app.
+## 5. Cómo se usa
 
-**B. Actualizar el repositorio con Python (alternativa)**
-```
-pip install openpyxl
-python tools/xlsx_a_json.py "CABLEADO CONEXIONADO Y TIMBRADO BW04.xlsx" data.json
-```
-Sube el nuevo `data.json` a GitHub (reemplaza el anterior). Los dispositivos que no hayan importado un Excel a mano lo cargan solos al abrir la app; los que sí lo hicieron pueden pulsar ⚙ → *Recargar data.json del repositorio*.
+- **Escanear**: cámara, lector USB o Bluetooth en modo teclado (basta con tener la app abierta) o escribir el tag. Las etiquetas son Code 128 y llevan el tag completo; al ser largas tienen barras muy finas, así que con la cámara: buena luz, el código dentro del recuadro amarillo y lo bastante cerca para que ocupe casi todo el ancho (botón de zoom si tu móvil lo tiene). Un lector USB o Bluetooth las lee sin esfuerzo.
+- **Modo lista**: lee varios códigos seguidos. En **Lista**: Excel, CSV, copiar para pegar en Sheets o **Enviar a Google Sheet** (pestaña ESCANEOS).
+- **Buscar**: por parte del tag, con filtros por status.
+- **Ficha**: columnas elegidas, PDF de Drive, fotos (Hacer foto o galería) y notas con tu nombre. Sin cobertura todo queda pendiente y se sube solo al volver la conexión.
+- **Columnas**: elige las de la ficha y las de la lista/Excel por separado.
 
-**C. Desde Google Drive / Google Sheets**
-1. Sube el Excel a Drive y ábrelo como Google Sheet (o copia la hoja CABLEADO a un Sheet).
-2. *Archivo → Compartir → Publicar en la web* → elige la pestaña **CABLEADO** y formato **CSV** → copia la URL.
-3. En la app: ⚙ → pega la URL → *Importar desde esa URL*. Repite cuando cambie la hoja.
+## 6. Instalar como app
 
-   Aviso: "Publicar en la web" hace la hoja pública para quien tenga el enlace.
+- **Android y PC (Chrome o Edge):** botón **Instalar** de la barra superior, o menú del navegador → Instalar app.
+- **iPhone y iPad:** en Safari, **Compartir → Añadir a pantalla de inicio**.
+- Una vez instalada abre sin barra del navegador y funciona sin conexión con los datos ya descargados. Incluye accesos directos (Escanear, Buscar, Lista) al mantener pulsado el icono en Android.
 
-**Enviar la lista escaneada a tu Google Sheet:** abre `apps-script.gs`, sigue las instrucciones del encabezado (2 minutos) y pega la URL `/exec` en ⚙. Después, el botón *☁ Google Sheet* de la lista añade las filas a la pestaña que indiques.
+## 7. Pantallas
 
-## 5. PDF, fotos y notas
+- **Móvil:** pestañas abajo; la ficha ocupa toda la pantalla y el botón Atrás del móvil la cierra.
+- **Tablet y escritorio:** panel izquierdo con las pestañas y ficha a la derecha. La cámara sigue activa mientras ves una ficha, para escanear el siguiente cable.
+- Claro u oscuro según el sistema.
 
-Al abrir un cable: *Cargar PDF* (pulling), *Tomar foto* o *Desde galería*, y un cuadro de anotaciones con fecha. Todo queda guardado en el dispositivo (IndexedDB), no en la nube. Para no perderlo o pasarlo a otro dispositivo usa ⚙ → *Exportar copia (.json)* / *Restaurar copia*, y *Exportar anotaciones (Excel)* para un listado de notas.
+## Seguridad
+
+La URL `/exec` es pública pero toda acción exige la clave `TOKEN`. Quien tenga URL y clave puede leer los datos y añadir o borrar notas y fotos (no puede modificar la tabla ni los PDF). Para cambiar la clave: edita `TOKEN`, crea *Nueva versión* de la implementación y actualiza la clave en cada dispositivo. Borrar una nota o foto la borra para todos (las fotos van a la papelera de Drive).
 
 ## Estructura
 
 ```
 index.html  style.css  app.js     la app
-sw.js manifest.json icon*         instalación y uso sin conexión
-data.json                         datos (generado desde el Excel)
-vendor/                           SheetJS (leer/escribir Excel) y ZXing (lector de códigos)
-tools/xlsx_a_json.py              Excel -> data.json
-apps-script.gs                    enviar la lista a Google Sheets
+fonts/                            tipografía B612 incluida (funciona sin conexión)
+vendor/                           SheetJS (Excel) y ZXing (lector de códigos)
+sw.js manifest.json icon*.png     instalación y modo sin conexión
+apps-script.gs                    servidor en tu Google (se pega en Apps Script)
+tools/xlsx_a_json.py              Excel a data.json (solo si no usas Google)
+extras/data.json                  copia de la tabla (NO subir a GitHub)
 ```

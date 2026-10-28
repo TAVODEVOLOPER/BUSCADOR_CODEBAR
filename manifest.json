@@ -1,15 +1,25 @@
 {
+  "id": "./",
   "name": "Cable Scan BW04",
   "short_name": "Cable Scan",
-  "description": "Escanea el código de barras de un cable y consulta su ficha, PDF de pulling, fotos y notas.",
+  "description": "Escanea el código de un cable y consulta su ficha, el PDF de pulling, las fotos y las notas del equipo.",
+  "lang": "es",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0f3d5e",
-  "theme_color": "#0f3d5e",
+  "orientation": "any",
+  "background_color": "#0D2436",
+  "theme_color": "#0D2436",
+  "categories": ["productivity", "utilities"],
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Escanear", "url": "./?tab=scan", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Buscar un tag", "url": "./?tab=search", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Lista de escaneos", "url": "./?tab=list", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
   ]
 }
