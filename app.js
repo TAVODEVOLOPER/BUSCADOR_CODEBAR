@@ -661,6 +661,12 @@ $('#sClose').addEventListener('click', () => {
 $('#sImport').addEventListener('click', () => $('#fileExcel').click());
 $('#fileExcel').addEventListener('change', e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; });
 $('#sRepo').addEventListener('click', reloadRepo);
+$('#sExportJson').addEventListener('click', () => {
+  if (!DATA) return toast('No hay datos que exportar');
+  const { fuente, ...out } = DATA;
+  download(new Blob([JSON.stringify(out)], { type: 'application/json' }), 'data.json');
+  toast('data.json descargado: súbelo a GitHub con ese mismo nombre', 4500);
+});
 $('#sCsv').addEventListener('click', importCsvUrl);
 
 /* copia de seguridad */

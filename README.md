@@ -37,7 +37,13 @@ Tienes tres caminos; el más sencillo es el A.
 **A. Importar el Excel desde la app (sin tocar GitHub)**
 ⚙ → *Importar Excel (.xlsx)* → elige `CABLEADO CONEXIONADO Y TIMBRADO BW04.xlsx`. La app localiza la hoja con la tabla principal (`CABLEADO` / `Tabla_MAIN`) y reemplaza los datos en ese dispositivo. Las notas, fotos y PDF **no se pierden** (van por tag).
 
-**B. Actualizar el repositorio para todos los dispositivos**
+**B0. Actualizar el repositorio SIN Python (todo desde el navegador)**
+1. En la app: ⚙ → *Importar Excel* y elige el Excel actualizado.
+2. ⚙ → *Descargar data.json (para subir a GitHub)*.
+3. En GitHub: *Add file → Upload files*, arrastra ese `data.json` (mismo nombre) → *Commit changes*.
+4. Espera 1–2 minutos; el resto de dispositivos lo recibe al abrir la app.
+
+**B. Actualizar el repositorio con Python (alternativa)**
 ```
 pip install openpyxl
 python tools/xlsx_a_json.py "CABLEADO CONEXIONADO Y TIMBRADO BW04.xlsx" data.json
