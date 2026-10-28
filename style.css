@@ -110,7 +110,7 @@ textarea{min-height:92px;padding:10px 12px;resize:vertical}
 /* ---------- cámara ---------- */
 .cam{position:relative;background:#000;border-radius:var(--r);overflow:hidden;aspect-ratio:4/3;margin-bottom:12px}
 .cam video{width:100%;height:100%;object-fit:cover;display:block}
-.corners{position:absolute;inset:20% 10%;pointer-events:none;
+.corners{position:absolute;inset:30% 6%;pointer-events:none;
   background:
     linear-gradient(var(--cy),var(--cy)) top left/28px 4px,linear-gradient(var(--cy),var(--cy)) top left/4px 28px,
     linear-gradient(var(--cy),var(--cy)) top right/28px 4px,linear-gradient(var(--cy),var(--cy)) top right/4px 28px,
@@ -120,6 +120,19 @@ textarea{min-height:92px;padding:10px 12px;resize:vertical}
 .cam-btns{position:absolute;right:8px;top:8px;display:flex;gap:6px}
 .cam-btn{width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;cursor:pointer}
 .cam-btn.zoom{font-weight:700;font-size:14px}
+.cam-btn.close{display:none;position:absolute;left:8px;top:8px}
+.corners .sweep{position:absolute;left:0;right:0;top:6%;height:2px;background:var(--cy);box-shadow:0 0 10px var(--cy);opacity:.85;animation:sweep 2.4s ease-in-out infinite alternate}
+@keyframes sweep{to{top:94%}}
+.flash{position:absolute;inset:0;pointer-events:none;opacity:0}
+.flash.ok{box-shadow:inset 0 0 0 8px var(--cg),inset 0 0 90px rgba(10,135,84,.55)}
+.flash.bad{box-shadow:inset 0 0 0 8px var(--bad),inset 0 0 90px rgba(191,47,27,.5)}
+.flash.go{animation:flash .45s ease-out}
+@keyframes flash{from{opacity:1}to{opacity:0}}
+.focus-ring{position:absolute;width:68px;height:68px;margin:-34px 0 0 -34px;border:2px solid var(--cy);border-radius:50%;pointer-events:none;animation:ring .5s ease-out}
+@keyframes ring{from{transform:scale(1.6);opacity:.2}to{transform:none;opacity:1}}
+.cam-foot{display:none}
+.chip{min-height:42px;padding:0 16px;border-radius:21px;border:1.5px solid rgba(255,255,255,.6);background:rgba(0,0,0,.5);color:#fff;font-weight:700;font-size:14px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--cy);border-color:var(--cy);color:#2A2100}
 
 /* ---------- etiqueta de cable (el elemento distintivo) ---------- */
 .marker{display:flex;align-items:stretch;background:var(--raise);border:1.5px solid var(--ink);border-radius:var(--r);overflow:hidden;min-width:0}
@@ -228,9 +241,32 @@ td .x{min-width:36px;min-height:36px;border:0;background:none;color:var(--bad);f
 .overlay.dark{background:rgba(3,10,16,.94);align-items:center;justify-content:center;z-index:80}
 #lbImg{max-width:96vw;max-height:78vh;border-radius:var(--r)}
 .lb-btns{display:flex;gap:10px;margin-top:16px}
-.toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:90;max-width:min(92vw,520px);padding:12px 16px;border-radius:var(--r);background:var(--fathom);color:#fff;border-left:6px solid var(--cy);box-shadow:0 8px 28px rgba(0,0,0,.35)}
+.toast{position:fixed;width:max-content;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:90;max-width:min(92vw,520px);padding:12px 16px;border-radius:var(--r);background:var(--fathom);color:#fff;border-left:6px solid var(--cy);box-shadow:0 8px 28px rgba(0,0,0,.35)}
 
-/* ---------- tablet y escritorio: panel izquierdo + ficha ---------- */
+/* ---------- pie, título de panel y menú lateral (ocultos hasta que hay sitio) ---------- */
+.foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:28px auto 0;max-width:640px;padding-top:12px;border-top:1px solid var(--hair);font-size:12px;color:var(--muted)}
+.foot .js-version{font-family:var(--mono)}
+.about{padding-bottom:6px}
+.about .js-version{font-family:var(--mono)}
+.ptitle,.side{display:none}
+
+/* ---------- móvil: el escáner ocupa toda la pantalla ---------- */
+@media (max-width:759px){
+  .cam{position:fixed;inset:0;z-index:35;aspect-ratio:auto;border-radius:0;margin:0;background:#000}
+  .cam video{object-fit:contain}   /* se ve todo el fotograma: ni un píxel de la etiqueta se pierde */
+  .cam-btn{width:48px;height:48px}
+  .cam-btn.close{display:grid;top:calc(10px + env(safe-area-inset-top));left:10px}
+  .cam-btns{top:calc(10px + env(safe-area-inset-top));right:10px}
+  .cam-foot{display:flex;flex-direction:column;gap:10px;position:absolute;left:0;right:0;bottom:0;padding:44px 14px calc(16px + env(safe-area-inset-bottom));
+    background:linear-gradient(to top,rgba(0,0,0,.82) 55%,transparent)}
+  .cam-last:empty{display:none}
+  .cam-tip{color:#E6EEF2;font-size:14px;text-align:center}
+  .cam-last:not(:empty)~.cam-tip{display:none}
+  .cam-row{display:flex;gap:10px;justify-content:center}
+  .toast{bottom:calc(150px + env(safe-area-inset-bottom))}
+}
+
+/* ---------- tablet: panel izquierdo + ficha ---------- */
 @media (min-width:520px){
   .tool span{display:inline}
   .tool{padding:0 12px}
@@ -260,15 +296,56 @@ td .x{min-width:36px;min-height:36px;border:0;background:none;color:var(--bad);f
   .overlay.modal .sheet{flex:none;height:min(86dvh,780px);border-radius:10px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}
   .sheet-head{padding-top:8px}
 }
-@media (min-width:1100px){
-  .rail{width:430px}
-  .kvs{display:grid;grid-template-columns:1fr 1fr;column-gap:36px}
-  .sections{grid-template-columns:1fr 1fr;column-gap:36px;align-items:start}
-  .detail-body{padding:8px 40px 48px}
-  .table-wrap{max-height:calc(100dvh - 340px)}
+
+/* ---------- escritorio: menú lateral + lista + ficha ---------- */
+@media (min-width:900px){
+  .app{display:grid;grid-template-columns:240px minmax(0,1fr)}
+  .bar,.tabs,.foot{display:none}
+
+  .side{display:flex;flex-direction:column;position:relative;background:var(--fathom);color:#fff;min-height:0;padding-top:4px}
+  .side::after{content:"";position:absolute;top:0;bottom:0;right:0;width:5px;background:var(--stripe)}
+  .side-brand{display:flex;align-items:center;gap:12px;padding:20px 22px 22px}
+  .side-brand .mark{width:38px;height:38px}
+  .side-brand strong{font-size:19px;line-height:1.1}
+  .side-nav{display:flex;flex-direction:column;gap:2px;padding:4px 12px;flex:1;overflow:auto}
+  .side-nav hr{width:100%;border:0;border-top:1px solid rgba(255,255,255,.14);margin:12px 0}
+  .snav{position:relative;display:flex;align-items:center;gap:14px;width:100%;min-height:46px;padding:0 12px;border:0;border-radius:var(--r);background:none;color:#C9D6DE;font-size:15px;font-weight:700;cursor:pointer;text-align:left}
+  .snav:hover{background:rgba(255,255,255,.08);color:#fff}
+  .snav.active{background:rgba(255,255,255,.12);color:#fff}
+  .snav.active::before{content:"";position:absolute;left:-12px;top:8px;bottom:8px;width:4px;border-radius:0 3px 3px 0;background:var(--cy)}
+  .snav span{flex:1}
+  .snav kbd{font:700 12px var(--mono);min-width:22px;padding:2px 6px;text-align:center;border:1px solid rgba(255,255,255,.3);border-radius:4px;color:#C9D6DE}
+  .snav .count{position:static;margin:0}
+  .side-foot{padding:14px 22px 18px;border-top:1px solid rgba(255,255,255,.14);display:flex;flex-direction:column;gap:6px;font-size:12px;color:#B9C8D1}
+  .conn{display:flex;align-items:center;gap:8px;font-weight:700;color:#fff}
+  .conn i{width:9px;height:9px;border-radius:50%;background:#7A8C97}
+  .conn[data-state="ok"] i{background:#3DDC97}
+  .conn[data-state="warn"] i{background:var(--cy)}
+  .foot-ver{font-family:var(--mono);color:#8FA3AF}
+
+  .rail{width:400px}
+  .rail-scroll{padding:22px 20px 24px}
+  .ptitle{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:22px;line-height:1.2;margin-bottom:4px}
+  .ptitle small{font-size:13px;font-weight:400;color:var(--muted)}
+  .detail-body{padding:8px 36px 48px}
+  .table-wrap{max-height:calc(100dvh - 250px)}
+  .toast{left:calc(50% + 120px)}
+
+  /* la lista de escaneos usa todo el ancho; la ficha se abre a la derecha al pulsar una fila */
+  .app[data-tab="list"] .rail{flex:1;width:auto;min-width:0}
+  .app[data-tab="list"] .panel{max-width:none}
+  .app[data-tab="list"] .detail{display:none}
+  .app[data-tab="list"] .detail.open{display:flex;flex:0 0 min(520px,44%);border-left:1px solid var(--hair)}
+  .app[data-tab="list"] #vBack{display:inline-flex}
 }
-@media (min-width:1500px){
+@media (min-width:1400px){
+  .rail{width:440px}
+  .sections{grid-template-columns:1fr 1fr;column-gap:40px;align-items:start}
+}
+@media (min-width:1700px){
   .rail{width:480px}
+  .kvs{display:grid;grid-template-columns:1fr 1fr;column-gap:40px}
+  .detail-body{padding:8px 48px 56px}
 }
 @media (display-mode:standalone){
   body{overscroll-behavior:none}

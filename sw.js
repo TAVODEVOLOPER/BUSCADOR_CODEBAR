@@ -1,5 +1,6 @@
-const VERSION = 'cablescan-v5';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png',
+importScripts('config.js');
+const VERSION = 'cablescan-' + self.CABLE_CONFIG.version;   // sale de config.js: una sola cifra que cambiar
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png',
   'icon-maskable-512.png', 'apple-touch-icon.png',
   'fonts/b612-latin-400-normal.woff2', 'fonts/b612-latin-700-normal.woff2',
   'fonts/b612-mono-latin-400-normal.woff2', 'fonts/b612-mono-latin-700-normal.woff2',

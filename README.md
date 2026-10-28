@@ -27,7 +27,7 @@ El equipo no necesita acceso a tu Sheet ni a tu Drive: solo la dirección de la 
 4. Arriba elige la función **`autorizar`** y pulsa **Ejecutar**. Acepta los permisos (si sale "Google no ha verificado esta app": *Configuración avanzada → Ir a … (no seguro)*; es tu propio script). Se crean las pestañas NOTAS, ARCHIVOS y PDF_INDEX y las carpetas **CableScan_PDF** y **CableScan_Fotos** en tu Drive.
 5. **Implementar → Nueva implementación → Aplicación web.** *Ejecutar como: Yo. Quién tiene acceso: Cualquier usuario.* Copia la URL que termina en `/exec`.
 6. Recarga la hoja y, en el menú nuevo **Cable Scan**, pulsa **Activar índice automático de PDF**.
-7. En la app: **Ajustes** → pega la URL y la clave, escribe tu nombre → **Probar conexión**. Cada persona del equipo repite este paso en su dispositivo.
+7. La URL `/exec` ya viene escrita en `config.js` (campo `scriptUrl`): si creas otra implementación, cámbiala ahí y sube el archivo. En la app solo falta la clave: **Ajustes** → escribe la clave (`TOKEN`) y tu nombre → **Probar conexión**. Cada persona del equipo lo hace una vez en su dispositivo. La clave no se guarda en GitHub.
 
 ## 3. PDF de pulling
 
@@ -59,10 +59,15 @@ Añade filas y columnas en la pestaña CABLEADO cuando quieras:
 - **iPhone y iPad:** en Safari, **Compartir → Añadir a pantalla de inicio**.
 - Una vez instalada abre sin barra del navegador y funciona sin conexión con los datos ya descargados. Incluye accesos directos (Escanear, Buscar, Lista) al mantener pulsado el icono en Android.
 
-## 7. Pantallas
+## 7. Versión y actualizaciones
 
-- **Móvil:** pestañas abajo; la ficha ocupa toda la pantalla y el botón Atrás del móvil la cierra.
-- **Tablet y escritorio:** panel izquierdo con las pestañas y ficha a la derecha. La cámara sigue activa mientras ves una ficha, para escanear el siguiente cable.
+La versión se ve en el pie de la app (menú lateral en escritorio, final de la pantalla Escanear en móvil y Ajustes → Acerca de). Sale de `config.js`: al publicar cambios, sube el número de `version` y los dispositivos instalados se actualizan solos y avisan.
+
+## 8. Pantallas
+
+- **Móvil:** pestañas abajo; la ficha ocupa toda la pantalla y el botón Atrás del móvil la cierra. La cámara se abre a pantalla completa con zoom, linterna, cambio de cámara, enfoque al tocar, aviso verde o rojo al leer, modo lista y pantalla siempre encendida. Al volver a abrir la app se reactiva sola si estaba activa.
+- **Tablet:** panel izquierdo con las pestañas y ficha a la derecha.
+- **Escritorio (a partir de 900 px):** menú lateral (Escanear, Buscar, Lista, Columnas, Ajustes) con el estado de la conexión y la versión; en medio la lista o la búsqueda y a la derecha la ficha. En **Lista** la tabla usa todo el ancho y la ficha se abre al lado. Atajos: `/` busca, `Esc` cierra la ficha o la ventana abierta.
 - Claro u oscuro según el sistema.
 
 ## Seguridad
@@ -73,6 +78,7 @@ La URL `/exec` es pública pero toda acción exige la clave `TOKEN`. Quien tenga
 
 ```
 index.html  style.css  app.js     la app
+config.js                         versión y URL de tu script (lo único que se edita al publicar)
 fonts/                            tipografía B612 incluida (funciona sin conexión)
 vendor/                           SheetJS (Excel) y ZXing (lector de códigos)
 sw.js manifest.json icon*.png     instalación y modo sin conexión

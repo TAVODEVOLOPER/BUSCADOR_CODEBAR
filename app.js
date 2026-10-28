@@ -8,6 +8,9 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const norm = s => String(s ?? '').trim().toUpperCase().replace(/\s+/g, '');
 const isWide = () => window.matchMedia('(min-width:760px)').matches;
+const CFG = self.CABLE_CONFIG || {};
+const APP_VERSION = CFG.version || '';
+const scriptUrl = () => LS.get('scriptUrl', '') || CFG.scriptUrl || '';   // la de config.js salvo que se cambie en Ajustes
 
 /* ---------- IndexedDB ---------- */
 const DB = (() => {
@@ -40,6 +43,21 @@ const DB = (() => {
     byTag: (s, tag) => tx(s, 'readonly', st => st.index('tag').getAll(tag)),
   };
 })();
+
+/* ---------- Pie de página: versión y estado ---------- */
+function setInfo(t, title = '') { $$('.js-info').forEach(e => { e.textContent = t; e.title = title; }); }
+function setConn(state, text) {
+  const c = $('#connState'); if (!c) return;
+  c.dataset.state = state; c.querySelector('span').textContent = text;
+}
+function paintVersion() {
+  const t = APP_VERSION ? `Cable Scan v${APP_VERSION}` : 'Cable Scan';
+  $$('.js-version').forEach(e => { e.textContent = t; });
+}
+function connStatus() {
+  if (!cloud.on()) return setConn(scriptUrl() ? 'warn' : 'off', scriptUrl() ? 'Falta la clave' : 'Sin conectar');
+  setConn(navigator.onLine ? 'ok' : 'warn', navigator.onLine ? 'Conectado a Google' : 'Sin conexión');
+}
 
 /* ---------- Estado ---------- */
 const LS = {
@@ -80,8 +98,7 @@ function setData(d, fuente) {
   d.rows.forEach((r, i) => IDX.set(norm(r[TAGI]), i));
 
   const src = d.fuente === 'cloud' ? 'Google Sheet' : d.fuente === 'local' ? 'importada' : 'repositorio';
-  $('#dataInfo').textContent = `${d.rows.length.toLocaleString('es-ES')} cables, ${d.columns.length} columnas, ${src}`;
-  $('#dataInfo').title = d.generado ? `Actualizada ${d.generado}` : '';
+  setInfo(`${d.rows.length.toLocaleString('es-ES')} cables, ${d.columns.length} columnas, ${src}`, d.generado ? `Actualizada ${d.generado}` : '');
 
   // Columnas: se fija la selección inicial y se avisa de las que aparezcan después
   const names = d.columns.map(c => c.name);
@@ -113,7 +130,7 @@ async function loadData() {
   if (stored && (stored.fuente === 'local' || stored.fuente === 'cloud')) { setData(stored); return; }
   if (repo) { repo.fuente = 'repo'; await DB.put('meta', repo, 'data'); setData(repo); return; }
   if (stored) { setData(stored); return; }
-  $('#dataInfo').textContent = 'Sin tabla todavía';
+  setInfo('Sin tabla todavía');
   renderEmpty();
   toast('Todavía no hay tabla. Conecta tu Google en Ajustes.', 5000);
 }
@@ -261,13 +278,15 @@ function handleCode(code) {
     return;
   }
   if (rows.length === 1 && rows[0] === current && $('#view').classList.contains('open')) return;   // la cámara sigue viendo el mismo cable
-  if (rows.length === 1) { beep(true); openCable(rows[0], true); }
+  if (rows.length === 1) { beep(true); camFlash('ok'); openCable(rows[0], true); }
   else if (rows.length > 1) { beep(true); setTab('search'); $('#q').value = code; searchLimit = 60; renderSearch(); }
   else { beep(false); showLast('missing', code, 'No está en la tabla. Revisa el código o busca una parte del tag.'); }
 }
 
 function showLast(kind, tag, text) {
-  $('#lastScan').innerHTML = `<div class="marker pop ${kind}"><span class="sleeve"></span><span class="mk-body"><b>${esc(tag)}</b><small>${esc(text)}</small></span></div>`;
+  const html = `<div class="marker pop ${kind}"><span class="sleeve"></span><span class="mk-body"><b>${esc(tag)}</b><small>${esc(text)}</small></span></div>`;
+  $('#lastScan').innerHTML = html; $('#camLast').innerHTML = html;
+  camFlash(kind === 'ok' ? 'ok' : 'bad');
 }
 
 /* ---------- Sonido ---------- */
@@ -298,8 +317,11 @@ async function startCam() {
   v.srcObject = cam.stream;
   await v.play().catch(() => { });
   $('#videoWrap').hidden = false;
+  layoutReticle();   // con el contenedor ya visible, para medirlo bien
   $('#btnCam').textContent = 'Detener cámara';
   cam.on = true;
+  LS.set('camAuto', true); keepAwake(true);
+  document.body.classList.toggle('scanning', !isWide());
 
   try { cam.devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch { }
   $('#btnSwitchCam').hidden = cam.devices.length < 2;
@@ -333,14 +355,19 @@ async function startCam() {
       if (!cam.on) return;
       if (!cam.paused && v.readyState >= 2 && v.videoWidth) {
         try {
-          const vis = visibleRect(v.videoWidth, v.videoHeight, v.clientWidth, v.clientHeight);
-          const r = (n++ % 3 === 2) ? vis : reticleRect(vis);   // dos de cada tres veces solo el recuadro; la tercera, todo lo visible
-          cv.width = r.w; cv.height = r.h;
-          cx.drawImage(v, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
-          const px = cx.getImageData(0, 0, r.w, r.h).data;
-          const lum = new Uint8ClampedArray(r.w * r.h);
+          const full = { x: 0, y: 0, w: v.videoWidth, h: v.videoHeight };
+          const vis = isWide() ? visibleRect(v.videoWidth, v.videoHeight, v.clientWidth, v.clientHeight) : full;   // en el móvil el vídeo se ve entero (contain)
+          // cinco pasadas rotativas: recuadro, recuadro ampliado 1,5× y 2× (alarga la distancia a la que se leen las barras finas), lo visible y el fotograma entero
+          const k = n++ % 5, sc = k === 1 ? 1.5 : k === 2 ? 2 : 1;
+          const r = k === 3 ? vis : k === 4 ? full : reticleRect(vis);
+          const cw = Math.round(r.w * sc), ch = Math.round(r.h * sc);
+          cv.width = cw; cv.height = ch;
+          cx.imageSmoothingEnabled = true;
+          cx.drawImage(v, r.x, r.y, r.w, r.h, 0, 0, cw, ch);
+          const px = cx.getImageData(0, 0, cw, ch).data;
+          const lum = new Uint8ClampedArray(cw * ch);
           for (let i = 0, j = 0; i < px.length; i += 4, j++) lum[j] = (px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000;
-          const text = zxDecode(lum, r.w, r.h);
+          const text = zxDecode(lum, cw, ch);
           if (text) handleCode(text);
         } catch { }
       }
@@ -350,6 +377,17 @@ async function startCam() {
   }
 }
 
+/* En el móvil el vídeo se muestra entero (contain) y el recuadro se coloca sobre la imagen real, no sobre la pantalla */
+function layoutReticle() {
+  const v = $('#video'), c = $('.corners'), box = $('#videoWrap');
+  if (isWide() || !v.videoWidth || !box.clientWidth) { c.style.cssText = ''; return; }
+  const W = box.clientWidth, H = box.clientHeight, va = v.videoWidth / v.videoHeight;
+  const w = Math.min(W, H * va), h = Math.min(H, W / va), ox = (W - w) / 2, oy = (H - h) / 2;
+  c.style.cssText = `inset:auto;left:${ox + w * 0.06}px;width:${w * 0.88}px;top:${oy + h * 0.30}px;height:${h * 0.40}px`;
+}
+window.addEventListener('resize', () => { if (cam.on) layoutReticle(); });
+$('#video').addEventListener('loadedmetadata', layoutReticle);
+
 /* Geometría del lector de reserva: qué parte del vídeo ve la persona y cuál es el recuadro */
 function visibleRect(W, H, boxW, boxH) {
   const ba = (boxW && boxH) ? boxW / boxH : 4 / 3, va = W / H;
@@ -358,7 +396,7 @@ function visibleRect(W, H, boxW, boxH) {
   else { h = Math.round(W / ba); y = Math.round((H - h) / 2); }
   return { x, y, w, h };
 }
-const reticleRect = v => ({ x: v.x + Math.round(v.w * 0.10), y: v.y + Math.round(v.h * 0.20), w: Math.round(v.w * 0.80), h: Math.round(v.h * 0.60) });
+const reticleRect = v => ({ x: v.x + Math.round(v.w * 0.06), y: v.y + Math.round(v.h * 0.30), w: Math.round(v.w * 0.88), h: Math.round(v.h * 0.40) });   // el mismo recuadro ancho que se dibuja
 
 let zxReader = null;
 function zxDecode(lum, w, h) {
@@ -376,8 +414,10 @@ function zxDecode(lum, w, h) {
   catch { return null; }
 }
 
-function stopCam() {
+function stopCam(manual = true) {
   cam.on = false;
+  if (manual) LS.set('camAuto', false);
+  keepAwake(false); document.body.classList.remove('scanning');
   clearTimeout(cam.timer);
   try { cam.reader && cam.reader.reset(); } catch { }
   cam.reader = null;
@@ -428,11 +468,13 @@ async function switchCam() {
 /* ---------- Pestañas ---------- */
 function setTab(name) {
   $('#app').dataset.tab = name;
-  $$('.tab').forEach(x => { const on = x.dataset.tab === name; x.classList.toggle('active', on); x.setAttribute('aria-selected', on); });
+  $$('.tab,.snav[data-tab]').forEach(x => { const on = x.dataset.tab === name; x.classList.toggle('active', on); x.setAttribute('aria-selected', on); });
   $$('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   if (DATA) { if (name === 'search') renderSearch(); if (name === 'list') renderList(); }
 }
-$$('.tab').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
+$$('.tab,.snav[data-tab]').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
+$$('.snav[data-proxy]').forEach(b => b.addEventListener('click', () => $('#' + b.dataset.proxy).click()));
+setTab($('#app').dataset.tab);
 
 /* ---------- Buscar ---------- */
 let statusFilter = '';
@@ -462,6 +504,7 @@ function renderSearch() {
     hits.push(i);
   }
   const shown = hits.slice(0, searchLimit);
+  $('#resCount').textContent = hits.length === DATA.rows.length ? `${hits.length.toLocaleString('es-ES')} cables` : `${hits.length.toLocaleString('es-ES')} de ${DATA.rows.length.toLocaleString('es-ES')}`;
   $('#results').innerHTML = shown.map(i => {
     const r = DATA.rows[i], st = STATI >= 0 ? r[STATI] : '', f = flags.get(r[TAGI]);
     const bits = [];
@@ -718,7 +761,7 @@ async function attachNotesToList() {
 
 function renderList() {
   if (!DATA) return;
-  const c = $('#listCount'); c.textContent = scanList.length; c.dataset.n = scanList.length;
+  $$('.count').forEach(c => { c.textContent = scanList.length; c.dataset.n = scanList.length; });
   const cols = listColumns();
   const nf = scanList.filter(x => !x.found).length;
   $('#listHint').textContent = scanList.length
@@ -817,19 +860,21 @@ $('#btnCols').addEventListener('click', () => DATA ? openCols() : toast('Todaví
 
 /* ---------- Ajustes ---------- */
 function saveSettingsFields(start = true) {
-  LS.set('scriptUrl', $('#sScriptUrl').value.trim()); LS.set('cloudToken', $('#sToken').value.trim());
+  const u = $('#sScriptUrl').value.trim();
+  LS.set('scriptUrl', u === CFG.scriptUrl ? '' : u); LS.set('cloudToken', $('#sToken').value.trim());   // si coincide con la de config.js no se guarda aparte
+  connStatus();
   LS.set('author', $('#sAuthor').value.trim());
   LS.set('sheetName', $('#sSheetName').value.trim() || 'ESCANEOS'); LS.set('csvUrl', $('#sCsvUrl').value.trim());
   if (start) startCloud();
 }
 $('#btnSettings').addEventListener('click', async () => {
   $('#setModal').hidden = false;
-  $('#sCsvUrl').value = LS.get('csvUrl', ''); $('#sScriptUrl').value = LS.get('scriptUrl', ''); $('#sToken').value = LS.get('cloudToken', '');
+  $('#sCsvUrl').value = LS.get('csvUrl', ''); $('#sScriptUrl').value = scriptUrl(); $('#sToken').value = LS.get('cloudToken', '');
   $('#sAuthor').value = LS.get('author', ''); $('#sSheetName').value = LS.get('sheetName', 'ESCANEOS');
   const [n, f] = await Promise.all([DB.all('notes'), DB.all('files')]);
   const pend = n.filter(x => !x.synced).length + f.filter(x => !x.synced && !x.localOnly && x.kind === 'photo').length;
   $('#sInfo').textContent = (DATA ? `Tabla: ${DATA.rows.length} cables y ${DATA.columns.length} columnas, ${DATA.generado || ''}. ` : 'Sin tabla todavía. ')
-    + (cloud.on() ? `Conectado. ${PDFS.length} PDF en Drive. Pendientes de subir: ${pend}.` : 'Sin conectar. Pega la URL y la clave que salen de la instalación del script.');
+    + (cloud.on() ? `Conectado. ${PDFS.length} PDF en Drive. Pendientes de subir: ${pend}.` : 'Falta solo la clave: escribe la que pusiste en TOKEN dentro del script.');
 });
 $('#sClose').addEventListener('click', () => { saveSettingsFields(); $('#setModal').hidden = true; });
 $('#sPull').addEventListener('click', async () => { saveSettingsFields(false); await pullTable(false); });
@@ -882,8 +927,42 @@ $('#sNotesXlsx').addEventListener('click', async () => {
   XLSX.writeFile(wb, `notas_${stamp()}.xlsx`);
 });
 
+/* ---------- Escáner móvil: aviso de lectura, enfoque al tocar, pantalla encendida ---------- */
+let flashT;
+function camFlash(kind) {
+  const f = $('#camFlash'); if (!f) return;
+  f.className = 'flash ' + kind; void f.offsetWidth; f.classList.add('go');
+  clearTimeout(flashT); flashT = setTimeout(() => f.classList.remove('go'), 450);
+}
+let wake = null;
+async function keepAwake(on) {
+  try {
+    if (on && navigator.wakeLock && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); }
+    else if (!on && wake) { await wake.release(); wake = null; }
+  } catch { }
+}
+$('#videoWrap').addEventListener('click', async e => {
+  if (e.target.closest('button') || !cam.stream) return;
+  const t = cam.stream.getVideoTracks()[0], caps = t.getCapabilities ? t.getCapabilities() : {};
+  if (!caps.focusMode) return;
+  const box = $('#videoWrap').getBoundingClientRect(), ring = $('#focusRing');
+  ring.style.left = (e.clientX - box.left) + 'px'; ring.style.top = (e.clientY - box.top) + 'px';
+  ring.hidden = false; ring.classList.remove('go'); void ring.offsetWidth; ring.classList.add('go');
+  setTimeout(() => { ring.hidden = true; }, 900);
+  try {
+    const adv = { focusMode: caps.focusMode.includes('single-shot') ? 'single-shot' : 'continuous' };
+    if (caps.pointsOfInterest) adv.pointsOfInterest = [{ x: (e.clientX - box.left) / box.width, y: (e.clientY - box.top) / box.height }];
+    await t.applyConstraints({ advanced: [adv] });
+    if (adv.focusMode === 'single-shot' && caps.focusMode.includes('continuous')) setTimeout(() => t.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => { }), 1500);
+  } catch { }
+});
+$('#btnCamClose').addEventListener('click', () => stopCam(true));
+$('#camType').addEventListener('click', () => { stopCam(true); $('#scanInput').focus(); $('#scanInput').scrollIntoView({ block: 'center' }); });
+const syncListChip = () => { const on = $('#listMode').checked; $('#camListChip').setAttribute('aria-pressed', on); $('#camListChip').textContent = on ? 'Modo lista: sí' : 'Modo lista'; };
+$('#camListChip').addEventListener('click', () => { const m = $('#listMode'); m.checked = !m.checked; m.dispatchEvent(new Event('change')); });
+
 /* ---------- Entradas de escaneo ---------- */
-$('#btnCam').addEventListener('click', () => cam.on ? stopCam() : startCam());
+$('#btnCam').addEventListener('click', () => cam.on ? stopCam(true) : startCam());
 $('#btnTorch').addEventListener('click', toggleTorch);
 $('#btnZoom').addEventListener('click', cycleZoom);
 $('#btnSwitchCam').addEventListener('click', switchCam);
@@ -893,12 +972,17 @@ $('#manualForm').addEventListener('submit', e => {
   lastHandled = { code: '', t: 0 }; handleCode(v);
 });
 $('#listMode').checked = LS.get('listMode', false);
-$('#listMode').addEventListener('change', e => LS.set('listMode', e.target.checked));
-document.addEventListener('visibilitychange', () => { if (document.hidden && cam.on) stopCam(); });
+$('#listMode').addEventListener('change', e => { LS.set('listMode', e.target.checked); syncListChip(); });
+syncListChip();
+// al salir de la app la cámara se apaga; al volver se reanuda sola si estaba activa
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && cam.on) { cam.resume = true; stopCam(false); }
+  else if (!document.hidden && cam.resume) { cam.resume = false; startCam(); }
+});
 
 /* ---------- Nube: Google Sheets + Drive vía Apps Script ---------- */
 const cloud = {
-  on: () => !!(LS.get('scriptUrl', '') && LS.get('cloudToken', '')),
+  on: () => !!(scriptUrl() && LS.get('cloudToken', '')),
   author: () => LS.get('author', ''),
 };
 const MAX_CLOUD = 15 * 1024 * 1024;   // fotos mayores se quedan solo en el dispositivo
@@ -906,13 +990,13 @@ const newUid = () => (crypto.randomUUID ? crypto.randomUUID() : 'u' + Date.now()
 
 async function apiGet(action, params = {}) {
   const q = new URLSearchParams({ action, token: LS.get('cloudToken', ''), ...params });
-  const r = await fetch(LS.get('scriptUrl', '') + '?' + q);
+  const r = await fetch(scriptUrl() + '?' + q);
   const j = await r.json();
   if (!j.ok) throw new Error(j.error || 'error del servidor');
   return j;
 }
 async function apiPost(action, payload = {}) {
-  const r = await fetch(LS.get('scriptUrl', ''), {
+  const r = await fetch(scriptUrl(), {
     method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ action, token: LS.get('cloudToken', ''), ...payload }),
   });
@@ -1016,7 +1100,7 @@ async function syncCloud(silent) {
 let deferredInstall = null;
 const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-function updateInstallUI() { $('#btnInstall').hidden = standalone() || !(deferredInstall || isIos()); }
+function updateInstallUI() { const h = standalone() || !(deferredInstall || isIos()); $('#btnInstall').hidden = h; $('.snav[data-proxy="btnInstall"]').hidden = h; }
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; updateInstallUI(); });
 window.addEventListener('appinstalled', () => { deferredInstall = null; updateInstallUI(); toast('App instalada'); });
 $('#btnInstall').addEventListener('click', async () => {
@@ -1031,10 +1115,33 @@ function toast(msg, ms = 2600) {
   clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, ms);
 }
 
+/* ---------- Atajos (escritorio) ---------- */
+let lastKeyT = 0;
+document.addEventListener('keydown', e => {
+  const gap = Date.now() - lastKeyT; lastKeyT = Date.now();
+  const tgt = e.target, typing = tgt && ['INPUT', 'TEXTAREA', 'SELECT'].includes(tgt.tagName);
+  if (e.key === 'Escape') {
+    if (!$('#lightbox').hidden) $('#lbClose').click();
+    else if (!$('#colsModal').hidden) $('#cClose').click();
+    else if (!$('#setModal').hidden) $('#sClose').click();
+    else if (typing && tgt.id === 'q') { tgt.value = ''; tgt.blur(); searchLimit = 60; renderSearch(); }
+    else if (current >= 0 && $('#view').classList.contains('open')) $('#vBack').click();
+    return;
+  }
+  if (e.key === '/' && gap > 250 && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); setTab('search'); $('#q').focus(); $('#q').select(); }
+});
+
 /* ---------- Arranque ---------- */
 (async function init() {
   try { navigator.storage?.persist?.(); } catch { }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+  paintVersion(); connStatus();
+  window.addEventListener('online', connStatus); window.addEventListener('offline', connStatus);
+  if ('serviceWorker' in navigator) {
+    const had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) toast(`App actualizada${APP_VERSION ? ' a la versión ' + APP_VERSION : ''}. Recarga para ver los cambios.`, 6000); });
+  }
+  if (!cloud.on() && scriptUrl()) setTimeout(() => toast('Falta la clave de conexión. Escríbela en Ajustes.', 6000), 1200);
   updateInstallUI();
   const tab = new URLSearchParams(location.search).get('tab');
   if (['scan', 'search', 'list'].includes(tab)) setTab(tab);
@@ -1044,4 +1151,9 @@ function toast(msg, ms = 2600) {
   if (pdfs) setPdfs(pdfs.list, pdfs.hash);
   await loadData();
   startCloud();
+  // en el móvil, si la cámara estaba activa y ya hay permiso, se abre sola
+  try {
+    const perm = navigator.permissions ? await navigator.permissions.query({ name: 'camera' }) : null;
+    if (!isWide() && LS.get('camAuto', false) && $('#app').dataset.tab === 'scan' && perm && perm.state === 'granted') startCam();
+  } catch { }
 })();

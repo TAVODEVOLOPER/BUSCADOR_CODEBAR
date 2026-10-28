@@ -19,6 +19,33 @@
 <body>
 <div class="app" id="app" data-tab="scan">
 
+  <!-- MENÚ LATERAL (escritorio) -->
+  <aside class="side" aria-label="Menú">
+    <div class="side-brand">
+      <svg class="mark"  viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="3" y="5" width="3" height="16" fill="currentColor"/><rect x="8" y="5" width="1.5" height="16" fill="currentColor"/>
+        <rect x="11.5" y="5" width="4" height="16" fill="currentColor"/><rect x="17.5" y="5" width="1.5" height="16" fill="currentColor"/>
+        <rect x="21" y="5" width="3" height="16" fill="currentColor"/><rect x="26" y="5" width="3" height="16" fill="currentColor"/>
+        <rect x="3" y="24" width="26" height="4" fill="#F4C20D"/><rect x="3" y="24" width="8" height="4" fill="#0A8754"/><rect x="19" y="24" width="8" height="4" fill="#0A8754"/>
+      </svg>
+      <div class="brand-text"><strong>Cable Scan</strong><span class="sub">Borwin 4</span></div>
+    </div>
+    <nav class="side-nav" aria-label="Secciones">
+      <button class="snav" data-tab="scan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Escanear</span></button>
+      <button class="snav" data-tab="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Buscar</span><kbd>/</kbd></button>
+      <button class="snav" data-tab="list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Lista</span><b class="count" data-n="0">0</b></button>
+      <hr>
+      <button class="snav" data-proxy="btnCols"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 5h4v14h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Columnas</span></button>
+      <button class="snav" data-proxy="btnSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Ajustes</span></button>
+      <button class="snav" data-proxy="btnInstall" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0l-4-4m4 4l4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Instalar app</span></button>
+    </nav>
+    <footer class="side-foot">
+      <div class="conn" id="connState"><i></i><span>Sin conectar</span></div>
+      <div class="js-info foot-info">Cargando la tabla</div>
+      <div class="js-version foot-ver"></div>
+    </footer>
+  </aside>
+
   <header class="bar">
     <div class="brand">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -29,7 +56,7 @@
       </svg>
       <div class="brand-text">
         <strong>Cable Scan</strong>
-        <span class="sub" id="dataInfo">Cargando la tabla</span>
+        <span class="sub js-info">Cargando la tabla</span>
       </div>
     </div>
     <div class="bar-actions">
@@ -68,9 +95,15 @@
       <div class="rail-scroll">
         <!-- ESCANEAR -->
         <section id="tab-scan" class="panel active" aria-label="Escanear">
+          <h2 class="ptitle">Escanear</h2>
           <div class="cam" id="videoWrap" hidden>
             <video id="video" playsinline muted></video>
-            <div class="corners" aria-hidden="true"></div>
+            <div class="corners" aria-hidden="true"><i class="sweep"></i></div>
+            <div class="focus-ring" id="focusRing" hidden></div>
+            <div class="flash" id="camFlash"></div>
+            <button class="cam-btn close" id="btnCamClose" aria-label="Cerrar cámara">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            </button>
             <div class="cam-btns">
               <button class="cam-btn zoom" id="btnZoom" hidden aria-label="Zoom">1×</button>
               <button class="cam-btn" id="btnTorch" hidden aria-label="Linterna">
@@ -79,6 +112,14 @@
               <button class="cam-btn" id="btnSwitchCam" hidden aria-label="Cambiar de cámara">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9a7 7 0 0112-3l2 2M19 15a7 7 0 01-12 3l-2-2M19 4v4h-4M5 20v-4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
+            </div>
+            <div class="cam-foot">
+              <div class="cam-last" id="camLast" aria-live="polite"></div>
+              <p class="cam-tip" id="camTip">Llena el recuadro con el código. Toca la pantalla para enfocar.</p>
+              <div class="cam-row">
+                <button class="chip" id="camListChip" aria-pressed="false">Modo lista</button>
+                <button class="chip" id="camType">Escribir tag</button>
+              </div>
             </div>
           </div>
           <button class="btn primary big" id="btnCam">Activar cámara</button>
@@ -99,11 +140,12 @@
           </label>
 
           <div id="lastScan" aria-live="polite"></div>
-          <p class="help">Etiquetas con muchas barras: con buena luz, acerca la cámara hasta que ocupen el recuadro amarillo; si hay botón de zoom, úsalo. Con un lector en modo teclado basta con tener esta pantalla abierta.</p>
+          <p class="help">Las etiquetas largas llevan barras muy finas: con buena luz, acerca la cámara hasta que el código llene el recuadro amarillo y usa el zoom si lo tienes. Con un lector USB o Bluetooth basta con tener esta pantalla abierta.</p>
         </section>
 
         <!-- BUSCAR -->
         <section id="tab-search" class="panel" aria-label="Buscar">
+          <h2 class="ptitle">Buscar <small id="resCount"></small></h2>
           <label class="field">
             <span>Buscar por tag</span>
             <input id="q" type="search" placeholder="Parte del tag, por ejemplo CKA32-BR03" autocomplete="off">
@@ -114,6 +156,7 @@
 
         <!-- LISTA -->
         <section id="tab-list" class="panel" aria-label="Lista de escaneos">
+          <h2 class="ptitle">Lista de escaneos</h2>
           <div class="toolbar">
             <button class="btn primary" id="btnXlsx">Descargar Excel</button>
             <button class="btn" id="btnCsv">CSV</button>
@@ -124,6 +167,7 @@
           <p class="help" id="listHint"></p>
           <div class="table-wrap"><table id="listTable"></table></div>
         </section>
+        <footer class="foot"><span class="js-version"></span><span class="js-info"></span></footer>
       </div>
     </aside>
 
@@ -203,6 +247,8 @@
         <input type="file" id="fileBackup" accept=".json" hidden>
       </section>
 
+      <section class="about"><h3>Acerca de</h3><p class="muted js-version"></p></section>
+
       <details>
         <summary>Sin Google: cargar la tabla a mano</summary>
         <div class="stack">
@@ -235,6 +281,7 @@
 
 <script src="vendor/xlsx.full.min.js"></script>
 <script src="vendor/zxing.min.js"></script>
+<script src="config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
