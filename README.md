@@ -41,7 +41,25 @@ El equipo no necesita acceso a tu Sheet ni a tu Drive: solo la dirección de la 
 - Si ya tienes los PDF en otra carpeta, pon su ID (el final de la URL de la carpeta) en `PDF_FOLDER_ID` del script.
 - Máximo 30 MB por PDF.
 
-## 4. Cuando la tabla crece
+## 4. Resumen de avance (CC_SCHEDULE)
+
+La pestaña **Resumen** muestra el avance general (% de cables tendidos sobre el total del proyecto) y el avance por semana, con gráficos que funcionan sin conexión.
+
+- **Total de cables:** crea en tu Sheet una pestaña llamada **`CC_SCHEDULE`** y pega en ella la columna `CABLE_NUMBER` del CC_SCHEDULE (con su encabezado). Solo se usa el tag y la cantidad; si pegas el export entero, el resto de columnas se ignora.
+- **Estado y semana:** salen de la tabla CABLEADO (columnas `Status Actual` y `SEMANA`).
+- En la app, **Ajustes → Actualizar el CC_SCHEDULE** (también se descarga solo al abrir; solo si cambió).
+- Sin Google: **Ajustes → Sin Google → Importar el CC_SCHEDULE (.xlsx)**. Se lee en ese dispositivo (mejor en el ordenador, pesa unos 8 MB).
+- Los cables de la tabla que no figuren en el CC_SCHEDULE se avisan y no cuentan en el avance sobre el total.
+
+## 5. Cambiar de cuenta de Google
+
+1. Con la cuenta nueva, copia tu Sheet (desde la cuenta antigua: compártelo con la nueva, ábrelo y **Archivo → Hacer una copia**). La copia lleva las pestañas (tabla, NOTAS, ARCHIVOS) y el script.
+2. En la copia: **Extensiones → Apps Script**, revisa `TOKEN` y `ADMIN_TOKEN`, ejecuta **`autorizar`** y haz una **Nueva implementación** (Aplicación web; Ejecutar como: Yo; Acceso: Cualquier usuario).
+3. Pon la URL `/exec` nueva en `config.js` (`scriptUrl`), sube el archivo a GitHub y sube el número de `version`. Los dispositivos usan la URL de `config.js` y se actualizan solos; no hay que tocar nada en cada móvil.
+4. PDF: súbelos de nuevo con la app (o a la carpeta `CableScan_PDF` de la cuenta nueva).
+5. Fotos antiguas: comparte la carpeta `CableScan_Fotos` de la cuenta antigua con la nueva (lector) y siguen abriéndose; las fotos nuevas se guardan en la cuenta nueva.
+
+## 6. Cuando la tabla crece
 
 Añade filas y columnas en la pestaña CABLEADO cuando quieras:
 - La app descarga la tabla al abrirse **solo si cambió** (ahorra datos móviles). También se puede forzar en **Ajustes → Actualizar la tabla ahora**.
@@ -49,7 +67,7 @@ Añade filas y columnas en la pestaña CABLEADO cuando quieras:
 - Las columnas nuevas **no** se añaden solas a la ficha (para no cambiar lo que ve el equipo): la app avisa y las marca como "Nueva" en **Columnas**, donde se activan con un toque.
 - Mantén `CABLE_NUMBER` y los encabezados en la fila 1.
 
-## 5. Cómo se usa
+## 7. Cómo se usa
 
 - **Escanear**: cámara, lector USB o Bluetooth en modo teclado (basta con tener la app abierta) o escribir el tag. Las etiquetas son Code 128 y llevan el tag completo; al ser largas tienen barras muy finas, así que con la cámara: buena luz, el código dentro del recuadro amarillo y lo bastante cerca para que ocupe casi todo el ancho (botón de zoom si tu móvil lo tiene). Un lector USB o Bluetooth las lee sin esfuerzo.
 - **Modo lista**: lee varios códigos seguidos. En **Lista**: Excel, CSV, copiar para pegar en Sheets o **Enviar a Google Sheet** (pestaña ESCANEOS).
@@ -57,17 +75,17 @@ Añade filas y columnas en la pestaña CABLEADO cuando quieras:
 - **Ficha**: columnas elegidas, PDF de Drive, fotos (Hacer foto o galería) y notas con tu nombre. Sin cobertura todo queda pendiente y se sube solo al volver la conexión.
 - **Columnas**: elige las de la ficha y las de la lista/Excel por separado.
 
-## 6. Instalar como app
+## 8. Instalar como app
 
 - **Android y PC (Chrome o Edge):** botón **Instalar** de la barra superior, o menú del navegador → Instalar app.
 - **iPhone y iPad:** en Safari, **Compartir → Añadir a pantalla de inicio**.
 - Una vez instalada abre sin barra del navegador y funciona sin conexión con los datos ya descargados. Incluye accesos directos (Escanear, Buscar, Lista) al mantener pulsado el icono en Android.
 
-## 7. Versión y actualizaciones
+## 9. Versión y actualizaciones
 
 La versión se ve en el pie de la app (menú lateral en escritorio, final de la pantalla Escanear en móvil y Ajustes → Acerca de). Sale de `config.js`: al publicar cambios, sube el número de `version` y los dispositivos instalados se actualizan solos y avisan.
 
-## 8. Pantallas
+## 10. Pantallas
 
 - **Móvil:** pestañas abajo; la ficha ocupa toda la pantalla y el botón Atrás del móvil la cierra. La cámara se abre a pantalla completa con zoom, linterna, cambio de cámara, enfoque al tocar, aviso verde o rojo al leer, modo lista y pantalla siempre encendida. Al volver a abrir la app se reactiva sola si estaba activa.
 - **Tablet:** panel izquierdo con las pestañas y ficha a la derecha.
@@ -82,6 +100,7 @@ La URL `/exec` es pública pero toda acción exige la clave `TOKEN`. Quien tenga
 
 ```
 index.html  style.css  app.js     la app
+stats.js                          pantalla Resumen (gráficos)
 config.js                         versión y URL de tu script (lo único que se edita al publicar)
 fonts/                            tipografía B612 incluida (funciona sin conexión)
 vendor/                           SheetJS (Excel) y ZXing (lector de códigos)

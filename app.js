@@ -10,7 +10,7 @@ const norm = s => String(s ?? '').trim().toUpperCase().replace(/\s+/g, '');
 const isWide = () => window.matchMedia('(min-width:760px)').matches;
 const CFG = self.CABLE_CONFIG || {};
 const APP_VERSION = CFG.version || '';
-const scriptUrl = () => LS.get('scriptUrl', '') || CFG.scriptUrl || '';   // la de config.js salvo que se cambie en Ajustes
+const scriptUrl = () => LS.get('urlOverride', '') || CFG.scriptUrl || LS.get('scriptUrl', '');   // manda config.js; solo se cambia a mano en Ajustes
 
 /* ---------- IndexedDB ---------- */
 const DB = (() => {
@@ -116,6 +116,7 @@ function setData(d, fuente) {
     }
   }
   buildChips(); renderSearch(); renderList();
+  if ($('#app').dataset.tab === 'stats' && typeof renderStats === 'function') renderStats();
   if (current >= d.rows.length) current = -1;
   if (current >= 0) renderCable(); else renderEmpty();
 }
@@ -471,6 +472,7 @@ function setTab(name) {
   $$('.tab,.snav[data-tab]').forEach(x => { const on = x.dataset.tab === name; x.classList.toggle('active', on); x.setAttribute('aria-selected', on); });
   $$('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   if (DATA) { if (name === 'search') renderSearch(); if (name === 'list') renderList(); }
+  if (name === 'stats' && typeof renderStats === 'function') renderStats();
 }
 $$('.tab,.snav[data-tab]').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
 $$('.snav[data-proxy]').forEach(b => b.addEventListener('click', () => $('#' + b.dataset.proxy).click()));
@@ -883,7 +885,7 @@ $('#btnCols').addEventListener('click', () => DATA ? openCols() : toast('Todaví
 /* ---------- Ajustes ---------- */
 function saveSettingsFields(start = true) {
   const u = $('#sScriptUrl').value.trim();
-  LS.set('scriptUrl', u === CFG.scriptUrl ? '' : u); LS.set('cloudToken', $('#sToken').value.trim());   // si coincide con la de config.js no se guarda aparte
+  LS.set('urlOverride', u === CFG.scriptUrl ? '' : u); LS.set('cloudToken', $('#sToken').value.trim());   // si coincide con la de config.js no se guarda aparte
   connStatus();
   LS.set('author', $('#sAuthor').value.trim()); LS.set('adminToken', $('#sAdmin').value.trim());
   LS.set('sheetName', $('#sSheetName').value.trim() || 'ESCANEOS'); LS.set('csvUrl', $('#sCsvUrl').value.trim());
@@ -910,6 +912,9 @@ $('#sPing').addEventListener('click', async () => {
   }
   catch (e) { toast('No se pudo conectar: ' + e.message, 5000); }
 });
+$('#sSched').addEventListener('click', async () => { saveSettingsFields(false); await pullSchedule(false); });
+$('#sImportSched').addEventListener('click', () => $('#fileSched').click());
+$('#fileSched').addEventListener('change', e => { if (e.target.files[0]) importSchedule(e.target.files[0]); e.target.value = ''; });
 $('#sImport').addEventListener('click', () => $('#fileExcel').click());
 $('#fileExcel').addEventListener('change', e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; });
 $('#sRepo').addEventListener('click', reloadRepo);
@@ -1077,7 +1082,7 @@ let syncing = false, resync = false, cloudStarted = false;
 function startCloud() {
   if (cloudStarted || !cloud.on()) return;
   cloudStarted = true;
-  pullTable(true).then(() => syncCloud(true));
+  pullTable(true).then(() => syncCloud(true)).then(() => typeof pullSchedule === 'function' && pullSchedule(true));
   window.addEventListener('online', () => syncCloud(true));
   setInterval(() => { if (!document.hidden) syncCloud(true); }, 90000);
 }
@@ -1170,12 +1175,13 @@ document.addEventListener('keydown', e => {
   if (!cloud.on() && scriptUrl()) setTimeout(() => toast('Falta la clave de conexión. Escríbela en Ajustes.', 6000), 1200);
   updateInstallUI();
   const tab = new URLSearchParams(location.search).get('tab');
-  if (['scan', 'search', 'list'].includes(tab)) setTab(tab);
+  if (['scan', 'search', 'list', 'stats'].includes(tab)) setTab(tab);
   renderEmpty();
   await refreshFlags().catch(() => { });
   const pdfs = await DB.get('meta', 'pdfs').catch(() => null);
   if (pdfs) setPdfs(pdfs.list, pdfs.hash);
   await loadData();
+  if (typeof loadSchedule === 'function') await loadSchedule();
   startCloud();
   // en el móvil, si la cámara estaba activa y ya hay permiso, se abre sola
   try {

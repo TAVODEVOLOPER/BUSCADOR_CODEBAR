@@ -20,6 +20,7 @@
   "shortcuts": [
     { "name": "Escanear", "url": "./?tab=scan", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
     { "name": "Buscar un tag", "url": "./?tab=search", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Resumen de avance", "url": "./?tab=stats", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
     { "name": "Lista de escaneos", "url": "./?tab=list", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
   ]
 }

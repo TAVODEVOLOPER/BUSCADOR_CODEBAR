@@ -34,6 +34,7 @@
       <button class="snav" data-tab="scan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Escanear</span></button>
       <button class="snav" data-tab="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Buscar</span><kbd>/</kbd></button>
       <button class="snav" data-tab="list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Lista</span><b class="count" data-n="0">0</b></button>
+      <button class="snav" data-tab="stats"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Resumen</span></button>
       <hr>
       <button class="snav" data-proxy="btnCols"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 5h4v14h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Columnas</span></button>
       <button class="snav" data-proxy="btnSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Ajustes</span></button>
@@ -89,6 +90,10 @@
         <button class="tab" role="tab" data-tab="list">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
           <span>Lista</span><b class="count" id="listCount" data-n="0">0</b>
+        </button>
+        <button class="tab" role="tab" data-tab="stats">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+          <span>Resumen</span>
         </button>
       </nav>
 
@@ -167,6 +172,12 @@
           <p class="help" id="listHint"></p>
           <div class="table-wrap"><table id="listTable"></table></div>
         </section>
+
+        <!-- RESUMEN -->
+        <section id="tab-stats" class="panel" aria-label="Resumen de avance">
+          <h2 class="ptitle">Resumen <small id="statsInfo"></small></h2>
+          <div id="stats" class="stats"></div>
+        </section>
         <footer class="foot"><span class="js-version"></span><span class="js-info"></span></footer>
       </div>
     </aside>
@@ -231,6 +242,7 @@
           <button class="btn" id="sPing">Probar conexión</button>
           <button class="btn primary" id="sPull">Actualizar la tabla ahora</button>
           <button class="btn" id="sSync">Sincronizar notas, fotos y PDF ahora</button>
+          <button class="btn" id="sSched">Actualizar el CC_SCHEDULE (total de cables)</button>
         </div>
       </section>
 
@@ -255,6 +267,8 @@
         <summary>Sin Google: cargar la tabla a mano</summary>
         <div class="stack">
           <button class="btn" id="sImport">Importar un Excel (.xlsx)</button>
+          <button class="btn" id="sImportSched">Importar el CC_SCHEDULE (.xlsx, solo en este dispositivo)</button>
+          <input type="file" id="fileSched" accept=".xlsx,.xlsm,.xls" hidden>
           <input type="file" id="fileExcel" accept=".xlsx,.xlsm,.xls,.csv" hidden>
           <button class="btn" id="sExportJson">Descargar data.json</button>
           <button class="btn" id="sRepo">Recargar data.json del repositorio</button>
@@ -286,5 +300,6 @@
 <script src="vendor/zxing.min.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
+<script src="stats.js"></script>
 </body>
 </html>

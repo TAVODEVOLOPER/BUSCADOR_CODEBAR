@@ -40,14 +40,15 @@
  * ni la compartas con quien no deba ver los datos.
  */
 
-var TOKEN = 'CAMBIA-ESTA-CLAVE-POR-UNA-FRASE-LARGA';
+var TOKEN = 'DRAGADOS-ADMIN';
 var HOJA_DATOS = 'CABLEADO';
 var HOJA_NOTAS = 'NOTAS';
 var HOJA_ARCHIVOS = 'ARCHIVOS';
 var HOJA_PDF = 'PDF_INDEX';
+var HOJA_SCHEDULE = 'CC_SCHEDULE';   // lista total de cables del proyecto; solo se lee la columna CABLE_NUMBER
 var CARPETA_FOTOS = 'CableScan_Fotos';
 var CARPETA_PDF = 'CableScan_PDF';
-var ADMIN_TOKEN = '';           // clave SOLO TUYA para subir y quitar PDF desde la app. Vacía = esa función está desactivada.
+var ADMIN_TOKEN = '123456';           // clave SOLO TUYA para subir y quitar PDF desde la app. Vacía = esa función está desactivada.
 var PDF_FOLDER_ID = '';          // opcional: ID de una carpeta de Drive que ya tengas con los PDF
 var MAX_PDF_BYTES = 30 * 1024 * 1024;
 
@@ -77,6 +78,7 @@ function handle_(p) {
       case 'ping': return out_({ ok: true, admin: isAdmin_(p) });
       case 'data': return out_(getData_(p.hash));
       case 'sync': return out_(getSync_(p.pdfHash));
+      case 'schedule': return out_(getSchedule_(p.hash));
       case 'file': return out_(getFile_(p.uid));
       case 'pdf': return out_(getPdf_(p.id));
       case 'uploadPdf': case 'delPdf':
@@ -223,6 +225,33 @@ function getData_(clientHash) {
     columns: head.map(function (n, i) { return { letter: colLetter_(i), name: n }; }),
     rows: rows
   };
+}
+
+/* Lista total de cables (pestaña CC_SCHEDULE): solo se leen los tags. Puedes pegar el export entero;
+   se busca la columna CABLE_NUMBER en las primeras filas y se ignora lo demás. */
+function getSchedule_(clientHash) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HOJA_SCHEDULE);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, none: true };
+  var lastCol = sh.getLastColumn();
+  var head = sh.getRange(1, 1, Math.min(30, sh.getLastRow()), lastCol).getDisplayValues();
+  var hr = -1, hc = -1;
+  for (var r = 0; r < head.length && hr < 0; r++) {
+    for (var c = 0; c < lastCol; c++) { if (String(head[r][c]).trim() === 'CABLE_NUMBER') { hr = r; hc = c; break; } }
+  }
+  if (hr < 0) throw new Error('No encuentro la columna CABLE_NUMBER en las primeras filas de ' + HOJA_SCHEDULE);
+  var n = sh.getLastRow() - hr - 1;
+  var tags = [];
+  if (n > 0) {
+    var col = sh.getRange(hr + 2, hc + 1, n, 1).getDisplayValues();
+    var seen = {};
+    for (var i = 0; i < col.length; i++) {
+      var t = String(col[i][0]).replace(/\u00a0/g, ' ').trim();
+      if (t && !seen[t]) { seen[t] = 1; tags.push(t); }
+    }
+  }
+  var hash = md5_(tags.length + '|' + tags.join('\n'));
+  if (clientHash && clientHash === hash) return { ok: true, same: true, hash: hash };
+  return { ok: true, hash: hash, total: tags.length, tags: tags };
 }
 
 function getSync_(pdfHash) {
