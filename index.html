@@ -152,9 +152,16 @@
         <section id="tab-search" class="panel" aria-label="Buscar">
           <h2 class="ptitle">Buscar <small id="resCount"></small></h2>
           <label class="field">
-            <span>Buscar por tag</span>
+            <span>Buscar texto</span>
             <input id="q" type="search" placeholder="Parte del tag, por ejemplo CKA32-BR03" autocomplete="off">
           </label>
+          <div class="sfbar">
+            <button class="filter" id="btnSCols" type="button" aria-expanded="false">Buscar en: Tag</button>
+            <button class="filter" id="btnAddF" type="button" aria-expanded="false">Filtrar por columna</button>
+            <button class="filter" id="btnClearF" type="button" hidden>Quitar filtros</button>
+          </div>
+          <div class="sfpanel" id="sfPanel" hidden></div>
+          <div class="filters" id="activeF"></div>
           <div class="filters" id="statusChips"></div>
           <div id="results" class="rows"></div>
         </section>
@@ -244,6 +251,14 @@
           <button class="btn" id="sSync">Sincronizar notas, fotos y PDF ahora</button>
           <button class="btn" id="sSched">Actualizar el CC_SCHEDULE (total de cables)</button>
         </div>
+      </section>
+
+      <section>
+        <h3>Resumen</h3>
+        <label class="field"><span>Meta de metros por semana</span>
+          <input id="sMeta" type="number" min="1" step="100" inputmode="numeric" placeholder="3000"></label>
+        <label class="field"><span>Columna de la que se suman los metros (de los cables en TENDIDO y COIL)</span>
+          <select id="sMetCol"></select></label>
       </section>
 
       <section>

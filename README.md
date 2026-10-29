@@ -45,7 +45,13 @@ El equipo no necesita acceso a tu Sheet ni a tu Drive: solo la dirección de la 
 
 La pestaña **Resumen** muestra el avance general (% de cables tendidos sobre el total del proyecto) y el avance por semana, con gráficos que funcionan sin conexión.
 
-- **Total de cables:** crea en tu Sheet una pestaña llamada **`CC_SCHEDULE`** y pega en ella la columna `CABLE_NUMBER` del CC_SCHEDULE (con su encabezado). Solo se usa el tag y la cantidad; si pegas el export entero, el resto de columnas se ignora.
+- **Total de cables:** crea en tu Sheet una pestaña llamada **`CC_SCHEDULE`** y pega en ella las columnas `CABLE_NUMBER` y `Discipline` del CC_SCHEDULE (con su encabezado, o el export entero). Solo se usa el tag y la cantidad; si pegas el export entero, el resto de columnas se ignora.
+- **Solo nuestra disciplina:** se cuentan solo los cables con `Discipline = INS` (cambia `DISCIPLINA_FILTRO` en el script y `disciplina` en `config.js`; vacío = todos).
+- **Metros por semana:** suma de `Cable_Routing_Produc` de los cables en TENDIDO y COIL, por la semana de su último estado, con meta de 3000 m/semana (cambiable en **Ajustes → Resumen**, junto con la columna de metros).
+- **Estados:** tabla con el conteo de `Status Actual` (sin PENDING, para no confundir con el total del CC_SCHEDULE).
+- **Metros:** salen de la columna `REAL_TENDIDO` de la tabla; botones Tendido / Coil / Tendido + Coil.
+- **Etiquetas clave** (se pulsan y abren Buscar con el filtro puesto): *Working por completar* (`WORKING` + `Released_CT_2 = Y`), *Coil por completar* (`COIL` + `Released_CT_2 = Y`) y *Pending por tender* (del CC_SCHEDULE: `CURRENT_STATUS = PENDING` + `Released_CT = Y`).
+- Del total INS se quitan los cables con `CURRENT_STATUS` DAMAGED o SPARE (el CC_SCHEDULE necesita las columnas `CURRENT_STATUS` y `Released_CT`).
 - **Estado y semana:** salen de la tabla CABLEADO (columnas `Status Actual` y `SEMANA`).
 - En la app, **Ajustes → Actualizar el CC_SCHEDULE** (también se descarga solo al abrir; solo si cambió).
 - Sin Google: **Ajustes → Sin Google → Importar el CC_SCHEDULE (.xlsx)**. Se lee en ese dispositivo (mejor en el ordenador, pesa unos 8 MB).
@@ -68,6 +74,8 @@ Añade filas y columnas en la pestaña CABLEADO cuando quieras:
 - Mantén `CABLE_NUMBER` y los encabezados en la fila 1.
 
 ## 7. Cómo se usa
+
+En **Buscar**: "Buscar en" elige una o varias columnas donde buscar el texto, y "Filtrar por columna" funciona como el filtro de Excel (marcas valores de una o varias columnas; entre columnas se combinan).
 
 - **Escanear**: cámara, lector USB o Bluetooth en modo teclado (basta con tener la app abierta) o escribir el tag. Las etiquetas son Code 128 y llevan el tag completo; al ser largas tienen barras muy finas, así que con la cámara: buena luz, el código dentro del recuadro amarillo y lo bastante cerca para que ocupe casi todo el ancho (botón de zoom si tu móvil lo tiene). Un lector USB o Bluetooth las lee sin esfuerzo.
 - **Modo lista**: lee varios códigos seguidos. En **Lista**: Excel, CSV, copiar para pegar en Sheets o **Enviar a Google Sheet** (pestaña ESCANEOS).

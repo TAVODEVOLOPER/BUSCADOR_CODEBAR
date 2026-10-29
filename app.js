@@ -96,6 +96,7 @@ function setData(d, fuente) {
   DATEI = COL.has('Fecha de Status') ? COL.get('Fecha de Status') : -1;
   IDX = new Map();
   d.rows.forEach((r, i) => IDX.set(norm(r[TAGI]), i));
+  searchCols = null; colFilters.clear(); sfCol = -1;
 
   const src = d.fuente === 'cloud' ? 'Google Sheet' : d.fuente === 'local' ? 'importada' : 'repositorio';
   setInfo(`${d.rows.length.toLocaleString('es-ES')} cables, ${d.columns.length} columnas, ${src}`, d.generado ? `Actualizada ${d.generado}` : '');
@@ -495,19 +496,129 @@ $('#statusChips').addEventListener('click', e => {
 });
 $('#q').addEventListener('input', () => { searchLimit = 60; renderSearch(); });
 
+/* Búsqueda por columnas, como el filtro de Excel:
+   - "Buscar en": una o varias columnas donde se busca el texto.
+   - "Filtrar por columna": marca valores de una o varias columnas (entre columnas se combinan con Y). */
+let searchCols = null;            // Set de índices de columna
+const colFilters = new Map();     // índice de columna -> Set de valores marcados
+let sfMode = '', sfCol = -1, pendFilter = false;   // pendFilter: lista PENDING + Released_CT = Y del CC_SCHEDULE
+const cellVal = (r, c) => { const v = String(r[c] ?? '').trim(); return v === '' ? '(vacío)' : v; };
+const getSearchCols = () => {
+  if (!searchCols) {
+    const saved = LS.get('searchCols', null);
+    const ok = Array.isArray(saved) ? saved.filter(n => COL.has(n)).map(n => COL.get(n)) : [];
+    searchCols = new Set(ok.length ? ok : [TAGI]);
+  }
+  return searchCols;
+};
+function paintActive() {
+  $('#btnClearF').hidden = !colFilters.size && !pendFilter;
+  $('#activeF').innerHTML = (pendFilter ? `<button class="filter on" data-pend="1" title="Quitar este filtro">CC_SCHEDULE: PENDING + Released_CT = Y ✕</button>` : '')
+    + [...colFilters].map(([c, set]) => `<button class="filter on" data-c="${c}" title="Quitar este filtro">${esc(DATA.columns[c].name)}: ${set.size === 1 ? esc([...set][0]) : set.size + ' valores'} ✕</button>`).join('');
+}
+/* viene del Resumen: abre Buscar con los filtros de la etiqueta ya puestos */
+function applySearchPreset(list, pend) {
+  colFilters.clear(); statusFilter = ''; pendFilter = !!pend; sfMode = ''; $('#q').value = ''; searchLimit = 60;
+  list.forEach(([name, vals]) => { if (COL.has(name)) colFilters.set(COL.get(name), new Set(vals)); });
+  setTab('search'); buildChips(); paintSF(); renderSearch();
+}
+function paintSF() {
+  if (!DATA) return;
+  const sc = [...getSearchCols()];
+  const nm = i => DATA.columns[i].name;
+  $('#btnSCols').textContent = 'Buscar en: ' + (sc.length === 1 ? nm(sc[0]) : sc.length + ' columnas');
+  $('#btnSCols').classList.toggle('on', sfMode === 'cols');
+  $('#btnAddF').classList.toggle('on', sfMode === 'filter');
+  $('#btnSCols').setAttribute('aria-expanded', sfMode === 'cols');
+  $('#btnAddF').setAttribute('aria-expanded', sfMode === 'filter');
+  $('#btnClearF').hidden = !colFilters.size;
+  paintActive();
+  const p = $('#sfPanel');
+  p.hidden = !sfMode;
+  if (!sfMode) return;
+  if (sfMode === 'cols') {
+    p.innerHTML = `<input class="sf-find" type="search" placeholder="Buscar columna" autocomplete="off"><div class="sf-list">` +
+      DATA.columns.map((c, i) => `<label class="sf-item" data-n="${esc(norm(c.name))}"><input type="checkbox" data-c="${i}" ${searchCols.has(i) ? 'checked' : ''}><span>${esc(c.name)}</span></label>`).join('') + `</div>
+      <p class="help">El texto se busca en las columnas marcadas.</p>`;
+  } else {
+    if (sfCol < 0) sfCol = STATI >= 0 ? STATI : TAGI;
+    const cnt = new Map();
+    DATA.rows.forEach(r => { const v = cellVal(r, sfCol); cnt.set(v, (cnt.get(v) || 0) + 1); });
+    const vals = [...cnt].sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'es', { numeric: true }));
+    const sel = colFilters.get(sfCol) || new Set();
+    p.innerHTML = `<label class="field"><span>Columna</span><select id="sfColSel">` +
+      DATA.columns.map((c, i) => `<option value="${i}" ${i === sfCol ? 'selected' : ''}>${esc(c.name)}${colFilters.has(i) ? ' •' : ''}</option>`).join('') + `</select></label>
+      <input class="sf-find" type="search" placeholder="Buscar valor (${vals.length.toLocaleString('es-ES')} distintos)" autocomplete="off">
+      <div class="sf-acts"><button class="btn" data-a="all" type="button">Marcar visibles</button><button class="btn" data-a="none" type="button">Desmarcar todo</button></div>
+      <div class="sf-list">` + vals.slice(0, 800).map(([v, n]) => `<label class="sf-item" data-n="${esc(norm(v))}"><input type="checkbox" data-v="${esc(v)}" ${sel.has(v) ? 'checked' : ''}><span>${esc(v)}</span><small>${n}</small></label>`).join('') + `</div>
+      <p class="help">${vals.length > 800 ? 'Se muestran los primeros 800 valores; usa el buscador. ' : ''}Sin ninguno marcado no se filtra esta columna.</p>`;
+  }
+}
+const sfHide = (p) => { const t = norm(p.value); p.parentElement.querySelectorAll('.sf-item').forEach(el => el.hidden = !!t && !el.dataset.n.includes(t)); };
+$('#btnSCols').addEventListener('click', () => { sfMode = sfMode === 'cols' ? '' : 'cols'; paintSF(); });
+$('#btnAddF').addEventListener('click', () => { sfMode = sfMode === 'filter' ? '' : 'filter'; paintSF(); });
+$('#btnClearF').addEventListener('click', () => { colFilters.clear(); pendFilter = false; searchLimit = 60; paintSF(); renderSearch(); });
+$('#activeF').addEventListener('click', e => {
+  const b = e.target.closest('[data-c],[data-pend]'); if (!b) return;
+  if (b.dataset.pend) pendFilter = false; else colFilters.delete(+b.dataset.c); searchLimit = 60; paintSF(); renderSearch();
+});
+$('#sfPanel').addEventListener('input', e => { if (e.target.classList.contains('sf-find')) sfHide(e.target); });
+$('#sfPanel').addEventListener('change', e => {
+  const t = e.target;
+  if (t.id === 'sfColSel') { sfCol = +t.value; paintSF(); return; }
+  if (t.dataset.c !== undefined && sfMode === 'cols') {
+    const c = +t.dataset.c;
+    t.checked ? searchCols.add(c) : searchCols.delete(c);
+    if (!searchCols.size) { searchCols.add(TAGI); }
+    LS.set('searchCols', [...searchCols].map(i => DATA.columns[i].name));
+    $('#btnSCols').textContent = 'Buscar en: ' + (searchCols.size === 1 ? DATA.columns[[...searchCols][0]].name : searchCols.size + ' columnas');
+    if (!t.checked && searchCols.has(TAGI) && searchCols.size === 1) paintSF();
+  } else if (t.dataset.v !== undefined) {
+    const set = colFilters.get(sfCol) || new Set();
+    t.checked ? set.add(t.dataset.v) : set.delete(t.dataset.v);
+    set.size ? colFilters.set(sfCol, set) : colFilters.delete(sfCol);
+  }
+  searchLimit = 60; renderSearch();
+});
+$('#sfPanel').addEventListener('click', e => {
+  const a = e.target.closest('[data-a]'); if (!a) return;
+  const set = colFilters.get(sfCol) || new Set();
+  if (a.dataset.a === 'none') set.clear();
+  else $('#sfPanel').querySelectorAll('.sf-item:not([hidden]) input[data-v]').forEach(i => set.add(i.dataset.v));
+  set.size ? colFilters.set(sfCol, set) : colFilters.delete(sfCol);
+  searchLimit = 60; paintSF(); renderSearch();
+});
+
 function renderSearch() {
   if (!DATA) return;
   const q = norm($('#q').value);
+  const sc = [...getSearchCols()];
   const hits = [];
-  for (let i = 0; i < DATA.rows.length; i++) {
-    const r = DATA.rows[i];
-    if (statusFilter && (r[STATI] || '(sin status)') !== statusFilter) continue;
-    if (q && !norm(r[TAGI]).includes(q)) continue;
-    hits.push(i);
+  const okRow = (r) => {
+    if (statusFilter && (r[STATI] || '(sin status)') !== statusFilter) return false;
+    for (const [c, set] of colFilters) if (!set.has(cellVal(r, c))) return false;
+    return true;
+  };
+  if (pendFilter && SC.pend) {
+    // PENDING + Released_CT = Y del CC_SCHEDULE: los que aún no están en la tabla salen como texto
+    for (const t of SC.pend) {
+      if (q && !norm(t).includes(q)) continue;
+      const i = IDX.get(norm(t));
+      if (i === undefined) { if (!colFilters.size && !statusFilter) hits.push(t); continue; }
+      if (okRow(DATA.rows[i])) hits.push(i);
+    }
+  } else {
+    for (let i = 0; i < DATA.rows.length; i++) {
+      const r = DATA.rows[i];
+      if (q && !sc.some(c => norm(r[c]).includes(q))) continue;
+      if (okRow(r)) hits.push(i);
+    }
   }
+  paintActive(); if (!sfMode) paintSF();
   const shown = hits.slice(0, searchLimit);
-  $('#resCount').textContent = hits.length === DATA.rows.length ? `${hits.length.toLocaleString('es-ES')} cables` : `${hits.length.toLocaleString('es-ES')} de ${DATA.rows.length.toLocaleString('es-ES')}`;
+  $('#resCount').textContent = pendFilter ? `${hits.length.toLocaleString('es-ES')} cables` : hits.length === DATA.rows.length ? `${hits.length.toLocaleString('es-ES')} cables` : `${hits.length.toLocaleString('es-ES')} de ${DATA.rows.length.toLocaleString('es-ES')}`;
   $('#results').innerHTML = shown.map(i => {
+    if (typeof i === 'string') return `<div class="row nodata"><span class="t">${esc(i)}</span><span class="m"><span class="s">Pending por tender · aún no está en la tabla</span></span></div>`;
     const r = DATA.rows[i], st = STATI >= 0 ? r[STATI] : '', f = flags.get(r[TAGI]);
     const bits = [];
     if (f?.notes) bits.push(`${f.notes} ${f.notes === 1 ? 'nota' : 'notas'}`);
@@ -515,7 +626,7 @@ function renderSearch() {
     if (pdfsFor(r[TAGI]).length) bits.push('PDF');
     return `<button class="row ${statusClass(st)} ${i === current ? 'sel' : ''}" data-i="${i}"><span class="t">${esc(r[TAGI])}</span>
       <span class="m"><span class="s">${esc(st ? sentence(st) : 'Sin status')}</span>${bits.map(b => `<span>${b}</span>`).join('')}</span></button>`;
-  }).join('') || '<p class="empty">Ningún cable coincide. Prueba con otra parte del tag o quita el filtro de status.</p>';
+  }).join('') || '<p class="empty">Ningún cable coincide. Prueba con otra parte del texto o quita algún filtro.</p>';
   if (hits.length > shown.length) {
     $('#results').insertAdjacentHTML('beforeend', `<button class="btn more" id="btnMore">Mostrar más (${hits.length - shown.length} restantes)</button>`);
   }
@@ -888,12 +999,17 @@ function saveSettingsFields(start = true) {
   LS.set('urlOverride', u === CFG.scriptUrl ? '' : u); LS.set('cloudToken', $('#sToken').value.trim());   // si coincide con la de config.js no se guarda aparte
   connStatus();
   LS.set('author', $('#sAuthor').value.trim()); LS.set('adminToken', $('#sAdmin').value.trim());
+  const mt = parseFloat($('#sMeta').value); LS.set('metaSemanal', mt > 0 ? mt : (CFG.metaSemanal || 3000));
+  if ($('#sMetCol').value) LS.set('colMetros', $('#sMetCol').value);
+  if ($('#app').dataset.tab === 'stats' && typeof renderStats === 'function') renderStats();
   LS.set('sheetName', $('#sSheetName').value.trim() || 'ESCANEOS'); LS.set('csvUrl', $('#sCsvUrl').value.trim());
   if (start) startCloud();
 }
 $('#btnSettings').addEventListener('click', async () => {
   $('#setModal').hidden = false;
   $('#sCsvUrl').value = LS.get('csvUrl', ''); $('#sScriptUrl').value = scriptUrl(); $('#sToken').value = LS.get('cloudToken', '');
+  $('#sMeta').value = LS.get('metaSemanal', CFG.metaSemanal || 3000);
+  if (DATA) { $('#sMetCol').innerHTML = DATA.columns.map(c => `<option value="${esc(c.name)}">${esc(c.letter)}  ${esc(c.name)}</option>`).join(''); $('#sMetCol').value = (typeof metrosCol === 'function' && metrosCol()) || ''; }
   $('#sAdmin').value = LS.get('adminToken', ''); $('#sAuthor').value = LS.get('author', ''); $('#sSheetName').value = LS.get('sheetName', 'ESCANEOS');
   const [n, f] = await Promise.all([DB.all('notes'), DB.all('files')]);
   const pend = n.filter(x => !x.synced).length + f.filter(x => !x.synced && !x.localOnly && x.kind === 'photo').length;

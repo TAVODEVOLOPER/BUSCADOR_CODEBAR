@@ -40,15 +40,17 @@
  * ni la compartas con quien no deba ver los datos.
  */
 
-var TOKEN = 'DRAGADOS-ADMIN';
+var TOKEN = 'CAMBIA-ESTA-CLAVE-POR-UNA-FRASE-LARGA';
 var HOJA_DATOS = 'CABLEADO';
 var HOJA_NOTAS = 'NOTAS';
 var HOJA_ARCHIVOS = 'ARCHIVOS';
 var HOJA_PDF = 'PDF_INDEX';
-var HOJA_SCHEDULE = 'CC_SCHEDULE';   // lista total de cables del proyecto; solo se lee la columna CABLE_NUMBER
+var HOJA_SCHEDULE = 'CC_SCHEDULE';   // lista total de cables del proyecto
+var ESTADOS_EXCLUIDOS = ['DAMAGED', 'SPARE'];   // del CC_SCHEDULE (columna CURRENT_STATUS) no se cuentan
+var DISCIPLINA_FILTRO = 'INS';       // solo cuentan los cables con esta Discipline (INS = instrumentación). Vacío = todos
 var CARPETA_FOTOS = 'CableScan_Fotos';
 var CARPETA_PDF = 'CableScan_PDF';
-var ADMIN_TOKEN = '123456';           // clave SOLO TUYA para subir y quitar PDF desde la app. Vacía = esa función está desactivada.
+var ADMIN_TOKEN = '';           // clave SOLO TUYA para subir y quitar PDF desde la app. Vacía = esa función está desactivada.
 var PDF_FOLDER_ID = '';          // opcional: ID de una carpeta de Drive que ya tengas con los PDF
 var MAX_PDF_BYTES = 30 * 1024 * 1024;
 
@@ -227,31 +229,49 @@ function getData_(clientHash) {
   };
 }
 
-/* Lista total de cables (pestaña CC_SCHEDULE): solo se leen los tags. Puedes pegar el export entero;
-   se busca la columna CABLE_NUMBER en las primeras filas y se ignora lo demás. */
+/* Lista total de cables de TU disciplina (pestaña CC_SCHEDULE). Solo se leen dos columnas: CABLE_NUMBER y Discipline.
+   Puedes pegar el export entero; las demás columnas se ignoran. Con DISCIPLINA_FILTRO = 'INS' solo cuentan los cables
+   cuya columna Discipline sea INS (instrumentación). Déjalo vacío para contarlos todos. */
 function getSchedule_(clientHash) {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HOJA_SCHEDULE);
   if (!sh || sh.getLastRow() < 2) return { ok: true, none: true };
   var lastCol = sh.getLastColumn();
   var head = sh.getRange(1, 1, Math.min(30, sh.getLastRow()), lastCol).getDisplayValues();
-  var hr = -1, hc = -1;
+  var hr = -1, hc = -1, dc = -1, sc = -1, rc = -1;
   for (var r = 0; r < head.length && hr < 0; r++) {
     for (var c = 0; c < lastCol; c++) { if (String(head[r][c]).trim() === 'CABLE_NUMBER') { hr = r; hc = c; break; } }
   }
   if (hr < 0) throw new Error('No encuentro la columna CABLE_NUMBER en las primeras filas de ' + HOJA_SCHEDULE);
+  for (var c2 = 0; c2 < lastCol; c2++) {
+    var h = String(head[hr][c2]).trim();
+    if (h === 'Discipline' && dc < 0) dc = c2;
+    if (h === 'CURRENT_STATUS' && sc < 0) sc = c2;
+    if (h === 'Released_CT' && rc < 0) rc = c2;
+  }
+  var filtro = String(DISCIPLINA_FILTRO || '').trim().toUpperCase();
+  if (filtro && dc < 0) throw new Error('No encuentro la columna Discipline en ' + HOJA_SCHEDULE + '. Pégala junto a CABLE_NUMBER o deja DISCIPLINA_FILTRO vacío en el script');
   var n = sh.getLastRow() - hr - 1;
-  var tags = [];
+  var tags = [], pend = [], todos = 0, excl = 0;
   if (n > 0) {
     var col = sh.getRange(hr + 2, hc + 1, n, 1).getDisplayValues();
+    var dis = dc >= 0 ? sh.getRange(hr + 2, dc + 1, n, 1).getDisplayValues() : null;
+    var cst = sc >= 0 ? sh.getRange(hr + 2, sc + 1, n, 1).getDisplayValues() : null;
+    var rel = rc >= 0 ? sh.getRange(hr + 2, rc + 1, n, 1).getDisplayValues() : null;
     var seen = {};
     for (var i = 0; i < col.length; i++) {
       var t = String(col[i][0]).replace(/\u00a0/g, ' ').trim();
-      if (t && !seen[t]) { seen[t] = 1; tags.push(t); }
+      if (!t || seen[t]) continue;
+      seen[t] = 1; todos++;
+      if (filtro && String(dis[i][0]).trim().toUpperCase() !== filtro) continue;
+      var st = cst ? String(cst[i][0]).trim().toUpperCase() : '';
+      if (ESTADOS_EXCLUIDOS.indexOf(st) >= 0) { excl++; continue; }          // DAMAGED y SPARE no cuentan
+      tags.push(t);
+      if (st === 'PENDING' && rel && String(rel[i][0]).trim().toUpperCase() === 'Y') pend.push(t);   // PENDING POR TENDER
     }
   }
-  var hash = md5_(tags.length + '|' + tags.join('\n'));
+  var hash = md5_(filtro + '|' + tags.length + '|' + tags.join('\n') + '|' + pend.join('\n'));
   if (clientHash && clientHash === hash) return { ok: true, same: true, hash: hash };
-  return { ok: true, hash: hash, total: tags.length, tags: tags };
+  return { ok: true, hash: hash, total: tags.length, todos: todos, excluidos: excl, filtro: filtro, tags: tags, pend: pend };
 }
 
 function getSync_(pdfHash) {
