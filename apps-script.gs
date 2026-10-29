@@ -2,9 +2,10 @@
  * CABLE SCAN — servidor en tu Google (Sheets + Drive), sin coste y sin credenciales de Google Cloud.
  *
  * Quién puede hacer qué
- *  - TÚ (propietario): editas la tabla (pestaña CABLEADO) y pones los PDF en la carpeta de Drive.
+ *  - TÚ (propietario): editas la tabla (pestaña CABLEADO) y pones los PDF en la carpeta de Drive,
+ *    o los subes desde la app escribiendo tu ADMIN_TOKEN en Ajustes.
  *  - EL EQUIPO (app): solo LEE la tabla y los PDF; puede AÑADIR notas y fotos a cada tag.
- *    La app no tiene ninguna función para modificar la tabla ni subir PDF: el equipo ni siquiera
+ *    Sin ADMIN_TOKEN la app no puede subir ni quitar PDF, y nadie puede modificar la tabla. El equipo ni siquiera
  *    necesita acceso a tu Sheet ni a tu Drive, solo la URL de la app y la clave.
  *
  * Instalación (5 minutos, una sola vez)
@@ -46,6 +47,7 @@ var HOJA_ARCHIVOS = 'ARCHIVOS';
 var HOJA_PDF = 'PDF_INDEX';
 var CARPETA_FOTOS = 'CableScan_Fotos';
 var CARPETA_PDF = 'CableScan_PDF';
+var ADMIN_TOKEN = '';           // clave SOLO TUYA para subir y quitar PDF desde la app. Vacía = esa función está desactivada.
 var PDF_FOLDER_ID = '';          // opcional: ID de una carpeta de Drive que ya tengas con los PDF
 var MAX_PDF_BYTES = 30 * 1024 * 1024;
 
@@ -72,11 +74,13 @@ function handle_(p) {
     if (TOKEN.indexOf('CAMBIA-ESTA') === 0) return out_({ ok: false, error: 'Falta cambiar la clave TOKEN en el script' });
     if (!p.token || p.token !== TOKEN) return out_({ ok: false, error: 'Clave incorrecta' });
     switch (p.action) {
-      case 'ping': return out_({ ok: true });
+      case 'ping': return out_({ ok: true, admin: isAdmin_(p) });
       case 'data': return out_(getData_(p.hash));
       case 'sync': return out_(getSync_(p.pdfHash));
       case 'file': return out_(getFile_(p.uid));
       case 'pdf': return out_(getPdf_(p.id));
+      case 'uploadPdf': case 'delPdf':
+        if (!isAdmin_(p)) throw new Error(ADMIN_TOKEN ? 'Clave de administrador incorrecta' : 'Subir PDF desde la app está desactivado: pon un ADMIN_TOKEN en el script');
       case 'addNote': case 'delNote': case 'upload': case 'delFile': case 'scans':
         var lock = LockService.getScriptLock();
         lock.waitLock(25000);
@@ -89,6 +93,8 @@ function handle_(p) {
 }
 
 /* ---------- utilidades ---------- */
+function isAdmin_(p) { return !!ADMIN_TOKEN && ADMIN_TOKEN.indexOf('CAMBIA-ESTA') !== 0 && p.admin === ADMIN_TOKEN; }
+
 function colLetter_(i) {
   var s = ''; i++;
   while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); }
@@ -272,7 +278,7 @@ function write_(p) {
       return { ok: true };
 
     case 'upload':
-      if (p.kind && p.kind !== 'photo') throw new Error('Desde la app solo se pueden subir fotos; los PDF se ponen en la carpeta de Drive');
+      if (p.kind && p.kind !== 'photo') throw new Error('Desde la app solo se pueden subir fotos; los PDF los sube solo el administrador (uploadPdf)');
       if (!p.uid || !p.tag || !p.data) throw new Error('Faltan datos de la foto');
       sh = sheet_(HOJA_ARCHIVOS, H_ARCH);
       if (findRow_(sh, p.uid)) return { ok: true, duplicate: true };
@@ -283,6 +289,24 @@ function write_(p) {
       sh.appendRow([String(p.uid), file.getId(), String(p.tag), 'photo', String(p.name || ''),
         String(p.mime || ''), String(p.date || ''), String(p.author || '')]);
       return { ok: true, id: file.getId() };
+
+    case 'uploadPdf':
+      if (!p.tag || !p.data) throw new Error('Faltan datos del PDF');
+      var bytes = Utilities.base64Decode(p.data);
+      if (bytes.length > MAX_PDF_BYTES) throw new Error('El PDF pesa más de 30 MB');
+      // el nombre debe contener el tag completo para que la app lo asocie al cable
+      var base = String(p.name || '').replace(/\.pdf$/i, '').replace(/[\/\\]+/g, '-').trim();
+      var pname = (base.toUpperCase().replace(/\s+/g, '').indexOf(String(p.tag).toUpperCase().replace(/\s+/g, '')) >= 0 ? base : (String(p.tag) + (base ? ' ' + base : ''))) + '.pdf';
+      var pfile = pdfFolder_().createFile(Utilities.newBlob(bytes, 'application/pdf', pname));
+      indexarPdf();
+      return { ok: true, id: pfile.getId(), name: pname };
+
+    case 'delPdf':
+      sh = sheet_(HOJA_PDF, H_PDF);
+      if (!findRow_(sh, p.id)) throw new Error('Ese PDF no está en el índice');
+      try { DriveApp.getFileById(p.id).setTrashed(true); } catch (e) { }
+      indexarPdf();
+      return { ok: true };
 
     case 'delFile':
       sh = sheet_(HOJA_ARCHIVOS, H_ARCH);

@@ -221,6 +221,8 @@
           <input id="sScriptUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
         <label class="field"><span>Clave</span>
           <input id="sToken" type="password" autocomplete="off"></label>
+        <label class="field"><span>Clave de administrador (solo tú; permite subir y quitar PDF)</span>
+          <input id="sAdmin" type="password" autocomplete="off" placeholder="Déjala vacía si no eres administrador"></label>
         <label class="field"><span>Tu nombre (firma tus notas y fotos)</span>
           <input id="sAuthor" type="text" placeholder="Por ejemplo, Gustavo"></label>
         <label class="field"><span>Pestaña donde se guarda la lista enviada</span>
@@ -277,6 +279,7 @@
 <div id="toast" class="toast" role="status" hidden></div>
 
 <input type="file" id="filePhoto" accept="image/*" capture="environment" hidden>
+<input type="file" id="filePdf" accept="application/pdf,.pdf" hidden>
 <input type="file" id="filePhotoGal" accept="image/*" multiple hidden>
 
 <script src="vendor/xlsx.full.min.js"></script>

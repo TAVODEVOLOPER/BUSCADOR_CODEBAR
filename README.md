@@ -31,6 +31,10 @@ El equipo no necesita acceso a tu Sheet ni a tu Drive: solo la dirección de la 
 
 ## 3. PDF de pulling
 
+**Desde la app (tú):** en el script pon una frase secreta en `ADMIN_TOKEN` (distinta de `TOKEN`), ejecuta `autorizar` y crea una nueva versión de la implementación. En la app, **Ajustes → Clave de administrador**. En la ficha de cada cable aparece **Subir PDF de pulling** (y **Quitar** junto a cada PDF). El archivo se guarda en Drive con el tag en el nombre y la carpeta `CableScan_PDF` se crea sola si no existe. Sin esa clave, nadie del equipo puede subir ni quitar PDF.
+
+**Desde Drive:**
+
 - Copia los PDF a la carpeta **CableScan_PDF** de tu Drive (se admiten subcarpetas).
 - **El nombre del archivo debe contener el tag completo del cable**, por ejemplo `#HKF.BW41=731.CKA32-BR03.WG20.pdf` o `Pulling #HKF.BW41=731.CKA32-BR03.WG20 rev2.pdf`. Da igual mayúsculas o minúsculas. Un PDF sirve a varios cables si su nombre incluye varios tags.
 - Con el índice automático, los PDF nuevos aparecen en la app en unos 30 minutos. Para verlos ya: menú **Cable Scan → Actualizar índice de PDF** en la hoja.

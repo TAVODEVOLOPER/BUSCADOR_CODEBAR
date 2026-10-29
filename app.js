@@ -612,7 +612,8 @@ async function renderCable(animate) {
   const drivePdfs = pdfsFor(tag);
   const legacy = files.filter(f => f.kind === 'pdf');
   const photos = files.filter(f => f.kind === 'photo');
-  const pdfRows = drivePdfs.map(p => `<div class="item"><span class="nm">${esc(p.name)}<small>Actualizado ${esc(p.date)}</small></span><span class="go"><button class="btn small" data-pdf="${esc(p.id)}">Abrir</button></span></div>`).join('')
+  const adm = cloud.admin();
+  const pdfRows = drivePdfs.map(p => `<div class="item"><span class="nm">${esc(p.name)}<small>Actualizado ${esc(p.date)}</small></span><span class="go"><button class="btn small" data-pdf="${esc(p.id)}">Abrir</button>${adm ? `<button class="btn small danger" data-delpdf="${esc(p.id)}">Quitar</button>` : ''}</span></div>`).join('')
     + legacy.map(f => `<div class="item"><span class="nm">${esc(f.name)}${syncMark(f)}</span><span class="go"><button class="btn small" data-open="${f.id}">Abrir</button></span></div>`).join('');
   const pdfEmpty = !cloud.on() && !PDFS.length ? 'Conecta tu Google en Ajustes para ver los PDF de pulling.' : 'Todavía no hay PDF de pulling para este cable.';
 
@@ -629,7 +630,8 @@ async function renderCable(animate) {
     <div class="sections">
       <div>
         <div class="sec"><h3>PDF de pulling</h3>
-          ${pdfRows || `<p class="empty">${pdfEmpty}</p>`}
+          ${pdfRows || `<p class="empty">${adm ? 'Todavía no hay PDF de pulling para este cable. Súbelo con el botón.' : pdfEmpty}</p>`}
+          ${adm ? '<div class="btn-row"><button class="btn primary" id="addPdf">Subir PDF de pulling</button></div>' : ''}
         </div>
         <div class="sec" style="margin-top:28px"><h3>Fotos</h3>
           ${photos.length ? `<div class="photos">${photos.map(f => `<img data-photo="${f.id}" alt="${esc(f.name)}" ${f.blob ? `src="${URL.createObjectURL(f.blob)}"` : `src="${PIX}" data-lazy="1"`}>`).join('')}</div>` : '<p class="empty">Todavía no hay fotos de este cable.</p>'}
@@ -656,6 +658,12 @@ $('#vBody').addEventListener('click', async e => {
   const tag = DATA.rows[current][TAGI];
   if (t.id === 'addPhoto') $('#filePhoto').click();
   else if (t.id === 'addPhotoGal') $('#filePhotoGal').click();
+  else if (t.id === 'addPdf') $('#filePdf').click();
+  else if (t.dataset.delpdf) {
+    if (!confirm('¿Quitar este PDF? Se mueve a la papelera de tu Drive y desaparece para todos.')) return;
+    try { await apiPost('delPdf', { id: t.dataset.delpdf }); await syncCloud(true); await renderCable(); toast('PDF quitado'); }
+    catch (err) { toast('No se pudo quitar el PDF: ' + err.message, 5000); }
+  }
   else if (t.id === 'btnCopyTag') { try { await navigator.clipboard.writeText(tag); toast('Tag copiado'); } catch { toast('No se pudo copiar el tag'); } }
   else if (t.id === 'saveNote') {
     const text = $('#noteText').value.trim();
@@ -710,6 +718,20 @@ async function addPhotos(fileList) {
   toast(fileList.length > 1 ? 'Fotos guardadas' : 'Foto guardada');
   syncCloud(true);
 }
+$('#filePdf').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f || current < 0) return;
+  const tag = DATA.rows[current][TAGI];
+  if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') return toast('Elige un archivo PDF');
+  if (f.size > 25 * 1024 * 1024) return toast('El PDF pesa más de 25 MB y no se puede subir desde la app', 5000);
+  try {
+    toast(`Subiendo ${f.name}`, 60000);
+    const r = await apiPost('uploadPdf', { tag, name: f.name, data: await fileToB64(f) });
+    await syncCloud(true);
+    if (current >= 0 && DATA.rows[current][TAGI] === tag) await renderCable();
+    toast(`PDF subido a Drive como "${r.name}"`, 4000);
+  } catch (err) { toast('No se pudo subir el PDF: ' + err.message, 6000); }
+});
 $('#filePhoto').addEventListener('change', e => { if (e.target.files.length) addPhotos(e.target.files); e.target.value = ''; });
 $('#filePhotoGal').addEventListener('change', e => { if (e.target.files.length) addPhotos(e.target.files); e.target.value = ''; });
 
@@ -863,14 +885,14 @@ function saveSettingsFields(start = true) {
   const u = $('#sScriptUrl').value.trim();
   LS.set('scriptUrl', u === CFG.scriptUrl ? '' : u); LS.set('cloudToken', $('#sToken').value.trim());   // si coincide con la de config.js no se guarda aparte
   connStatus();
-  LS.set('author', $('#sAuthor').value.trim());
+  LS.set('author', $('#sAuthor').value.trim()); LS.set('adminToken', $('#sAdmin').value.trim());
   LS.set('sheetName', $('#sSheetName').value.trim() || 'ESCANEOS'); LS.set('csvUrl', $('#sCsvUrl').value.trim());
   if (start) startCloud();
 }
 $('#btnSettings').addEventListener('click', async () => {
   $('#setModal').hidden = false;
   $('#sCsvUrl').value = LS.get('csvUrl', ''); $('#sScriptUrl').value = scriptUrl(); $('#sToken').value = LS.get('cloudToken', '');
-  $('#sAuthor').value = LS.get('author', ''); $('#sSheetName').value = LS.get('sheetName', 'ESCANEOS');
+  $('#sAdmin').value = LS.get('adminToken', ''); $('#sAuthor').value = LS.get('author', ''); $('#sSheetName').value = LS.get('sheetName', 'ESCANEOS');
   const [n, f] = await Promise.all([DB.all('notes'), DB.all('files')]);
   const pend = n.filter(x => !x.synced).length + f.filter(x => !x.synced && !x.localOnly && x.kind === 'photo').length;
   $('#sInfo').textContent = (DATA ? `Tabla: ${DATA.rows.length} cables y ${DATA.columns.length} columnas, ${DATA.generado || ''}. ` : 'Sin tabla todavía. ')
@@ -882,7 +904,10 @@ $('#sSync').addEventListener('click', async () => { saveSettingsFields(false); a
 $('#sPing').addEventListener('click', async () => {
   saveSettingsFields(false);
   if (!cloud.on()) return toast('Falta la URL o la clave');
-  try { await apiGet('ping'); toast('Conexión correcta con tu Google'); }
+  try {
+    const j = await apiGet('ping', LS.get('adminToken', '') ? { admin: LS.get('adminToken', '') } : {});
+    toast(LS.get('adminToken', '') ? (j.admin ? 'Conexión correcta. Clave de administrador válida: puedes subir PDF.' : 'Conexión correcta, pero la clave de administrador no coincide con ADMIN_TOKEN.') : 'Conexión correcta con tu Google', 5000);
+  }
   catch (e) { toast('No se pudo conectar: ' + e.message, 5000); }
 });
 $('#sImport').addEventListener('click', () => $('#fileExcel').click());
@@ -983,6 +1008,7 @@ document.addEventListener('visibilitychange', () => {
 /* ---------- Nube: Google Sheets + Drive vía Apps Script ---------- */
 const cloud = {
   on: () => !!(scriptUrl() && LS.get('cloudToken', '')),
+  admin: () => !!(scriptUrl() && LS.get('cloudToken', '') && LS.get('adminToken', '')),   // solo quien tiene la clave de administrador ve los botones de PDF
   author: () => LS.get('author', ''),
 };
 const MAX_CLOUD = 15 * 1024 * 1024;   // fotos mayores se quedan solo en el dispositivo
@@ -998,7 +1024,7 @@ async function apiGet(action, params = {}) {
 async function apiPost(action, payload = {}) {
   const r = await fetch(scriptUrl(), {
     method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action, token: LS.get('cloudToken', ''), ...payload }),
+    body: JSON.stringify({ action, token: LS.get('cloudToken', ''), ...(/Pdf$/.test(action) ? { admin: LS.get('adminToken', '') } : {}), ...payload }),
   });
   const j = await r.json();
   if (!j.ok) throw new Error(j.error || 'error del servidor');
