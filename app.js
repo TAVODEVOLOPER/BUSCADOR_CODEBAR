@@ -475,6 +475,7 @@ function setTab(name) {
   $$('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   if (DATA) { if (name === 'search') renderSearch(); if (name === 'list') renderList(); }
   if (name === 'stats' && typeof renderStats === 'function') renderStats();
+  if (name === 'routes' && typeof renderRoutes === 'function') renderRoutes();
 }
 $$('.tab,.snav[data-tab]').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
 $$('.snav[data-proxy]').forEach(b => b.addEventListener('click', () => $('#' + b.dataset.proxy).click()));
@@ -1175,7 +1176,7 @@ $('#sPing').addEventListener('click', async () => {
   }
   catch (e) { toast('No se pudo conectar: ' + e.message, 5000); }
 });
-$('#sSched').addEventListener('click', async () => { saveSettingsFields(false); await pullSchedule(false); });
+$('#sSched').addEventListener('click', async () => { saveSettingsFields(false); await pullSchedule(false); if (typeof pullRoutes === 'function') await pullRoutes(true); });
 $('#sImportSched').addEventListener('click', () => $('#fileSched').click());
 $('#fileSched').addEventListener('change', e => { if (e.target.files[0]) importSchedule(e.target.files[0]); e.target.value = ''; });
 $('#sImport').addEventListener('click', () => $('#fileExcel').click());
@@ -1445,6 +1446,7 @@ document.addEventListener('keydown', e => {
   if (pdfs) setPdfs(pdfs.list, pdfs.hash);
   await loadData();
   if (typeof loadSchedule === 'function') await loadSchedule();
+  if (typeof loadRoutes === 'function') await loadRoutes();
   startCloud();
   // en el móvil, si la cámara estaba activa y ya hay permiso, se abre sola
   try {

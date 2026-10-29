@@ -76,6 +76,7 @@ async function importSchedule(file) {
         pendRows.push(pendCols.map((_, k) => { const x = ws[XLSX.utils.encode_cell({ r, c: ref.s.c + k })]; return x ? String(x.w ?? x.v).replace(/\u00a0/g, ' ').trim() : ''; }));
       }
     }
+    if (typeof importRoutes === 'function') await importRoutes(ws, ref, hr);
     const s = { tags, pend, pendCols, pendRows, hash: 'local-' + tags.length, fuente: 'local', filtro, todos };
     await DB.put('meta', s, 'schedule'); setSchedule(s);
     toast(`CC_SCHEDULE cargado: ${tags.length.toLocaleString('es-ES')} cables${filtro ? ' de ' + filtro : ''} (solo en este dispositivo)`, 5000);

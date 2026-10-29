@@ -347,8 +347,8 @@ td .x{min-width:36px;min-height:36px;border:0;background:none;color:var(--bad);f
   .toast{bottom:24px}
 
   .detail{display:flex;position:static;flex:1;min-width:0;z-index:auto;animation:none}
-  .app[data-tab="stats"] .rail{flex:1;width:auto;min-width:0}
-  .app[data-tab="stats"] .detail{display:none}
+  .app[data-tab="stats"] .rail,.app[data-tab="routes"] .rail{flex:1;width:auto;min-width:0}
+  .app[data-tab="stats"] .detail,.app[data-tab="routes"] .detail{display:none}
   .detail.open{animation:none}
   #vBack{display:none}
   .detail-head{justify-content:flex-end;min-height:56px;padding-top:8px;border-bottom:1px solid var(--hair);background:var(--bg);border-bottom-color:transparent}
@@ -469,4 +469,32 @@ button.kpi:hover,button.kpi:focus-visible{background:var(--raise);border-left-co
   .banner .bn-facts span{animation:vrise .6s ease-out both}
   .banner .bn-facts span:nth-child(2){animation-delay:.08s}.banner .bn-facts span:nth-child(3){animation-delay:.16s}.banner .bn-facts span:nth-child(4){animation-delay:.24s}
   @keyframes vrise{from{opacity:0;transform:translateY(10px)}}
+}
+
+/* Rutas y bandejas */
+.app[data-tab="routes"] .panel{max-width:1240px}
+.rt{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;margin-top:8px}
+.rt-side,.rt-main{min-width:0}
+.rt-codes{display:flex;flex-direction:column;border:1px solid var(--hair);border-radius:6px;background:var(--raise);max-height:60dvh;overflow:auto}
+.rt-code{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:44px;padding:0 12px;background:none;border:0;border-bottom:1px solid var(--hair);font:inherit;font-family:var(--mono);font-size:13px;text-align:left;cursor:pointer;color:var(--ink)}
+.rt-code:hover{background:var(--surface)}
+.rt-code.sel{background:var(--tint);box-shadow:inset 4px 0 0 var(--action)}
+.rt-code b{font-family:var(--font);font-size:14px;min-width:36px;text-align:right}
+.rt-codes .more{margin:8px}
+.rt-main .rt-back{display:none;margin-bottom:8px}
+.rt-k{grid-template-columns:repeat(2,minmax(0,1fr))}
+.rt-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 8px}
+.rt-table td,.rt-table th{white-space:nowrap}
+.rt-upd{margin-top:10px}
+.empty-big{max-width:520px;margin:6vh 0}
+@media (max-width:999px){
+  .rt.has-sel .rt-side{display:none}
+  .rt:not(.has-sel) .rt-main{display:none}
+  .rt-main .rt-back{display:inline-flex}
+}
+@media (min-width:1000px){
+  .rt{grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:36px;align-items:start}
+  .rt-codes{max-height:calc(100dvh - 300px)}
+  .rt-main{position:sticky;top:8px}
+  .rt-main .table-wrap{max-height:calc(100dvh - 420px)}
 }

@@ -34,6 +34,7 @@
       <button class="snav" data-tab="scan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Escanear</span></button>
       <button class="snav" data-tab="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Buscar</span><kbd>/</kbd></button>
       <button class="snav" data-tab="list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Lista</span><b class="count" data-n="0">0</b></button>
+      <button class="snav" data-tab="routes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16M8 4v6M15 9v6M10 14v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Rutas</span></button>
       <button class="snav" data-tab="stats"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Resumen</span></button>
       <hr>
       <button class="snav" data-proxy="btnCols"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 5h4v14h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Columnas</span></button>
@@ -90,6 +91,10 @@
         <button class="tab" role="tab" data-tab="list">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
           <span>Lista</span><b class="count" id="listCount" data-n="0">0</b>
+        </button>
+        <button class="tab" role="tab" data-tab="routes">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16M8 4v6M15 9v6M10 14v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span>Rutas</span>
         </button>
         <button class="tab" role="tab" data-tab="stats">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
@@ -180,6 +185,12 @@
           </div>
           <p class="help" id="listHint"></p>
           <div class="table-wrap"><table id="listTable"></table></div>
+        </section>
+
+        <!-- RUTAS -->
+        <section id="tab-routes" class="panel" aria-label="Rutas y bandejas">
+          <h2 class="ptitle">Rutas y bandejas <small id="rtInfo"></small></h2>
+          <div id="routes"></div>
         </section>
 
         <!-- RESUMEN -->
@@ -336,5 +347,6 @@
 <script src="config.js"></script>
 <script src="app.js"></script>
 <script src="stats.js"></script>
+<script src="routes.js"></script>
 </body>
 </html>

@@ -81,6 +81,7 @@ function handle_(p) {
       case 'data': return out_(getData_(p.hash));
       case 'sync': return out_(getSync_(p.pdfHash));
       case 'schedule': return out_(getSchedule_(p.hash));
+      case 'routes': return out_(getRoutes_(p.hash));
       case 'file': return out_(getFile_(p.uid));
       case 'pdf': return out_(getPdf_(p.id));
       case 'uploadPdf': case 'delPdf':
@@ -275,6 +276,52 @@ function getSchedule_(clientHash) {
   var hash = md5_(filtro + '|' + tags.length + '|' + tags.join('\n') + '|' + JSON.stringify(pendRows));
   if (clientHash && clientHash === hash) return { ok: true, same: true, hash: hash };
   return { ok: true, hash: hash, total: tags.length, todos: todos, excluidos: excl, filtro: filtro, tags: tags, pend: pend, pendCols: pendCols, pendRows: pendRows };
+}
+
+/* Rutas y bandejas: qué cables (de todas las disciplinas) pasan por cada código de ROUTE_CODES del CC_SCHEDULE.
+   Se envía comprimido: lista de cables [tag, disciplina, estado] y, por cada código, los números de cable que pasan. */
+function getRoutes_(clientHash) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HOJA_SCHEDULE);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, none: true };
+  var lastCol = sh.getLastColumn();
+  var head = sh.getRange(1, 1, Math.min(30, sh.getLastRow()), lastCol).getDisplayValues();
+  var hr = -1, hc = -1, dc = -1, sc = -1, rc = -1;
+  for (var r = 0; r < head.length && hr < 0; r++) {
+    for (var c = 0; c < lastCol; c++) { if (String(head[r][c]).trim() === 'CABLE_NUMBER') { hr = r; hc = c; break; } }
+  }
+  if (hr < 0) throw new Error('No encuentro la columna CABLE_NUMBER en las primeras filas de ' + HOJA_SCHEDULE);
+  for (var c2 = 0; c2 < lastCol; c2++) {
+    var h = String(head[hr][c2]).trim();
+    if (h === 'Discipline' && dc < 0) dc = c2;
+    if (h === 'CURRENT_STATUS' && sc < 0) sc = c2;
+    if (h === 'ROUTE_CODES' && rc < 0) rc = c2;
+  }
+  if (rc < 0) throw new Error('No encuentro la columna ROUTE_CODES en ' + HOJA_SCHEDULE);
+  var n = sh.getLastRow() - hr - 1;
+  if (n < 1) return { ok: true, none: true };
+  var col = function (k) { return k >= 0 ? sh.getRange(hr + 2, k + 1, n, 1).getDisplayValues() : null; };
+  var tg = col(hc), ds = col(dc), st = col(sc), rt = col(rc);
+  var discs = [], dmap = {}, stats = [], smap = {}, cables = [], codes = [], idx = [], cmap = {}, seen = {};
+  var pos = function (arr, map, v) { if (!Object.prototype.hasOwnProperty.call(map, v)) { map[v] = arr.length; arr.push(v); } return map[v]; };
+  for (var i = 0; i < n; i++) {
+    var t = String(tg[i][0]).replace(/\u00a0/g, ' ').trim();
+    if (!t || seen[t]) continue;
+    seen[t] = 1;
+    var ci = cables.length;
+    cables.push([t, pos(discs, dmap, ds ? String(ds[i][0]).trim().toUpperCase() : ''), pos(stats, smap, st ? String(st[i][0]).trim() : '')]);
+    var parts = String(rt[i][0]).split(',');
+    for (var k = 0; k < parts.length; k++) {
+      var code = parts[k].replace(/\u00a0/g, ' ').trim().replace(/^\/+/, '').trim();
+      if (!code) continue;
+      var ix = pos(codes, cmap, code);
+      if (!idx[ix]) idx[ix] = [];
+      var lst = idx[ix];
+      if (lst[lst.length - 1] !== ci) lst.push(ci);
+    }
+  }
+  var hash = md5_(JSON.stringify([discs, stats, cables, codes, idx]));
+  if (clientHash && clientHash === hash) return { ok: true, same: true, hash: hash };
+  return { ok: true, hash: hash, discs: discs, stats: stats, cables: cables, codes: codes, idx: idx };
 }
 
 function getSync_(pdfHash) {

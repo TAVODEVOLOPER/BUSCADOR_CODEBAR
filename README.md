@@ -67,6 +67,10 @@ La pestaña **Resumen** muestra el avance general (% de cables tendidos sobre el
 4. PDF: súbelos de nuevo con la app (o a la carpeta `CableScan_PDF` de la cuenta nueva).
 5. Fotos antiguas: comparte la carpeta `CableScan_Fotos` de la cuenta antigua con la nueva (lector) y siguen abriéndose; las fotos nuevas se guardan en la cuenta nueva.
 
+## 5b. Rutas y bandejas
+
+La pestaña **Rutas** usa la columna `ROUTE_CODES` del CC_SCHEDULE (todas las disciplinas): buscas el código de una bandeja o tránsito y ves cuántos cables pasan, de qué disciplina son y su `CURRENT_STATUS`. Se puede filtrar por disciplina y status, añadir esos cables a la lista y copiar los tags. Se descarga al abrir la pestaña por primera vez y con **Actualizar** (o Ajustes → Actualizar el CC_SCHEDULE). El CC_SCHEDULE debe tener la columna `ROUTE_CODES`.
+
 ## 6. Cuando la tabla crece
 
 Añade filas y columnas en la pestaña CABLEADO cuando quieras:
