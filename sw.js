@@ -4,7 +4,7 @@ const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'stats.js', 'config.js
   'icon-maskable-512.png', 'apple-touch-icon.png',
   'fonts/b612-latin-400-normal.woff2', 'fonts/b612-latin-700-normal.woff2',
   'fonts/b612-mono-latin-400-normal.woff2', 'fonts/b612-mono-latin-700-normal.woff2',
-  'vendor/xlsx.full.min.js', 'vendor/zxing.min.js'];
+  'vendor/xlsx.full.min.js', 'vendor/zxing.min.js', 'vendor/jspdf.umd.min.js', 'vendor/jspdf.plugin.autotable.min.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

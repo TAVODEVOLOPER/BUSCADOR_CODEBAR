@@ -4,11 +4,18 @@
 'use strict';
 
 /* ---------- CC_SCHEDULE: lista total de cables ---------- */
-const SC = { tags: null, pend: null, total: 0, hash: '', fuente: '', filtro: '', todos: 0 };
+const colLetter = i => { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+const SC = { tags: null, pend: null, pendData: null, pendIdx: new Map(), total: 0, hash: '', fuente: '', filtro: '', todos: 0 };
 
 function setSchedule(s) {
   SC.tags = new Set((s.tags || []).map(norm));
   SC.pend = Array.isArray(s.pend) ? s.pend : null;   // PENDING + Released_CT = Y (solo con Google o Excel completo)
+  // datos completos de esos cables, tal como están en el CC_SCHEDULE (para verlos, filtrarlos y listarlos)
+  SC.pendData = SC.pend && Array.isArray(s.pendCols) && Array.isArray(s.pendRows) ? {
+    columns: s.pendCols.map((name, i) => ({ name: name || ('Col ' + colLetter(i)), letter: colLetter(i) })),
+    rows: s.pendRows, tagi: Math.max(0, s.pendCols.indexOf('CABLE_NUMBER')), stati: s.pendCols.indexOf('CURRENT_STATUS'), sched: true,
+  } : null;
+  SC.pendIdx = new Map(); if (SC.pendData) SC.pendData.rows.forEach((r, i) => SC.pendIdx.set(norm(r[SC.pendData.tagi]), i));
   SC.total = SC.tags.size; SC.hash = s.hash || ''; SC.fuente = s.fuente || ''; SC.filtro = s.filtro || ''; SC.todos = s.todos || SC.total;
   if ($('#app').dataset.tab === 'stats') renderStats();
 }
@@ -23,7 +30,7 @@ async function pullSchedule(silent) {
     const j = await apiGet('schedule', SC.hash && SC.fuente === 'cloud' ? { hash: SC.hash } : {});
     if (j.none) { if (!silent) toast('Tu Sheet no tiene la pestaña CC_SCHEDULE con datos', 5000); return false; }
     if (j.same) { if (!silent) toast('El CC_SCHEDULE ya está al día'); return true; }
-    const s = { tags: j.tags, hash: j.hash, fuente: 'cloud', filtro: j.filtro || '', todos: j.todos || j.tags.length, pend: j.pend || [] };
+    const s = { tags: j.tags, hash: j.hash, fuente: 'cloud', filtro: j.filtro || '', todos: j.todos || j.tags.length, pend: j.pend || [], pendCols: j.pendCols || [], pendRows: j.pendRows || [] };
     await DB.put('meta', s, 'schedule'); setSchedule(s);
     if (!silent) toast(`CC_SCHEDULE actualizado: ${j.tags.length.toLocaleString('es-ES')} cables${j.filtro ? ' de ' + j.filtro : ''}`);
     return true;
@@ -52,7 +59,8 @@ async function importSchedule(file) {
     }
     const filtro = String(CFG.disciplina || '').trim().toUpperCase();
     if (filtro && dc < 0) throw new Error('no encuentro la columna Discipline');
-    const seen = new Set(), tags = [], pend = []; let todos = 0;
+    const seen = new Set(), tags = [], pend = [], pendRows = []; let todos = 0;
+    const pendCols = []; for (let c = ref.s.c; c <= ref.e.c; c++) { const hcell = ws[XLSX.utils.encode_cell({ r: hr, c })]; pendCols.push(hcell ? String(hcell.v).trim() : ''); }
     const val = (r, c) => { const x = c < 0 ? null : ws[XLSX.utils.encode_cell({ r, c })]; return x ? String(x.v).trim().toUpperCase() : ''; };
     for (let r = hr + 1; r <= ref.e.r; r++) {
       const cell = ws[XLSX.utils.encode_cell({ r, c: hc })];
@@ -63,9 +71,12 @@ async function importSchedule(file) {
       const st = val(r, sc);
       if (EXCLUIDOS.includes(st)) continue;   // DAMAGED y SPARE no cuentan
       tags.push(t);
-      if (st === 'PENDING' && val(r, rc) === 'Y') pend.push(t);
+      if (st === 'PENDING' && val(r, rc) === 'Y') {
+        pend.push(t);
+        pendRows.push(pendCols.map((_, k) => { const x = ws[XLSX.utils.encode_cell({ r, c: ref.s.c + k })]; return x ? String(x.w ?? x.v).replace(/\u00a0/g, ' ').trim() : ''; }));
+      }
     }
-    const s = { tags, pend, hash: 'local-' + tags.length, fuente: 'local', filtro, todos };
+    const s = { tags, pend, pendCols, pendRows, hash: 'local-' + tags.length, fuente: 'local', filtro, todos };
     await DB.put('meta', s, 'schedule'); setSchedule(s);
     toast(`CC_SCHEDULE cargado: ${tags.length.toLocaleString('es-ES')} cables${filtro ? ' de ' + filtro : ''} (solo en este dispositivo)`, 5000);
   } catch (e) { toast('No se pudo leer el CC_SCHEDULE: ' + e.message, 6000); }
@@ -292,7 +303,24 @@ function renderStats() {
 
   const pendN = SC.pend ? SC.pend.length : null;
   const keyBtn = (key, title, n, sub, hint) => `<button type="button" class="kpi act" data-key="${key}" title="${esc(hint)}"><span>${title}</span><b ${n == null ? '' : `data-cnt="${n}"`}>${n == null ? '–' : nf(n)}</b><small>${sub}</small></button>`;
+  const pctT = (tendTot * 100 / (d.total || 1)).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const fill = Math.min(100, tendTot * 100 / (d.total || 1));
   host.innerHTML = `
+  <section class="banner" aria-label="Avance general">
+    <div class="bn-top">
+      <div class="hero-num">${pctT}<small> %</small></div>
+      <p class="bn-txt"><b>${nf(tendTot)}</b> de <b>${nf(d.total)}</b> cables ${d.hasSched ? 'del ' + esc(sn) + ' ' : ''}están tendidos.${d.hasSched ? '' : ' Carga el CC_SCHEDULE en Ajustes para medir sobre el total de tu disciplina.'}</p>
+    </div>
+    <div class="bn-track" role="img" aria-label="Tendidos ${pctT} %"><i style="width:${fill}%"></i></div>
+    <div class="bn-facts">
+      <span><b>${nf(d.counted.curso)}</b> en curso</span>
+      <span><b>${nf(d.counted.inc)}</b> con incidencia</span>
+      <span><b>${nf(d.counted.otros)}</b> otros</span>
+      <span><b>${nf(d.notStarted)}</b> sin iniciar</span>
+    </div>
+    <div class="sb"><div class="sb-t">Reparto sobre ${d.hasSched ? 'el total del ' + esc(sn) : 'la tabla'} <b>${nf(d.total)}</b></div>${stackBar(itemsTotal, d.total)}</div>
+  </section>
+
   <section class="viz">
     <h3>Etiquetas clave</h3>
     <div class="kpis keys">
@@ -300,12 +328,7 @@ function renderStats() {
       ${keyBtn('coil', 'Coil por completar', d.kCoil, 'COIL + Released_CT_2 = Y', 'Ver estos cables en Buscar')}
       ${keyBtn('pending', 'Pending por tender', pendN, pendN == null ? 'actualiza el CC_SCHEDULE en Ajustes' : 'CC_SCHEDULE: PENDING + Released_CT = Y', 'Ver estos cables en Buscar')}
     </div>
-    <h3 class="h3b">Avance general</h3>
-    <div class="hero">
-      <div class="hero-num">${(tendTot * 100 / (d.total || 1)).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}<small> %</small></div>
-      <p><b>${nf(tendTot)}</b> de <b>${nf(d.total)}</b> cables ${d.hasSched ? 'del ' + esc(sn) + ' ' : ''}están tendidos.${d.hasSched ? '' : ' Carga el CC_SCHEDULE en Ajustes para medir sobre el total de tu disciplina.'}</p>
-    </div>
-    <div class="sb"><div class="sb-t">Sobre ${d.hasSched ? 'el total del ' + esc(sn) : 'la tabla'} <b>${nf(d.total)}</b></div>${stackBar(itemsTotal, d.total)}</div>
+    <h3 class="h3b">Desglose del avance</h3>
     ${d.hasSched ? `<div class="sb"><div class="sb-t">Entre los cables del ${esc(sn)} que ya están en la tabla <b>${nf(d.started)}</b></div>${stackBar(itemsTable, d.started)}</div>` : ''}
     <table class="legend">
       <thead><tr><th>Estado</th><th>Cables</th><th>% del total</th>${d.hasSched ? '<th>% de la tabla</th>' : ''}</tr></thead>
@@ -324,15 +347,9 @@ function renderStats() {
     ${d.weeks.length ? `
     <div class="wk">${mHtml}</div>
     <div class="wk">
-      <h4 class="h4">Cables por semana</h4>
-      <div class="chips" id="wkChips">${WEEK_MODES.map(m => `<button class="filter ${sState.mode === m.k ? 'on' : ''}" data-m="${m.k}">${m.name}</button>`).join('')}</div>
-      <p class="chart-t" id="wkTitle"></p>
-      <div class="chart" id="chWeek"></div>
-      <details class="tv"><summary>Ver como tabla</summary><div class="table-wrap"><table id="wkTable"></table></div></details>
-    </div>
-    <div class="wk">
       <p class="chart-t">Cables tendidos acumulados${d.hasSched ? ' (sobre ' + nf(d.total) + ' cables)' : ''}</p>
       <div class="chart" id="chCum"></div>
+      <details class="tv"><summary>Ver como tabla</summary><div class="table-wrap"><table id="wkTable"></table></div></details>
     </div>
     ${d.noWeek.tend + d.noWeek.curso + d.noWeek.inc + d.noWeek.otros ? `<p class="note-s">${nf(d.noWeek.tend + d.noWeek.curso + d.noWeek.inc + d.noWeek.otros)} cables de la tabla no tienen semana y no salen en los gráficos por semana${d.noWeek.tend ? ` (${nf(d.noWeek.tend)} de ellos tendidos)` : ''}.</p>` : ''}
     ` : '<p class="empty">La tabla no tiene la columna SEMANA con valores, así que no se puede dibujar el avance por semana.</p>'}
@@ -372,20 +389,12 @@ function countUp(host) {
 }
 
 function drawWeekly(d) {
-  if (!d.weeks.length) return;
-  const mode = sState.mode, weeks = d.weeks;
-  const val = (c, w) => (d.wk.get(w) || d.zero())[c];
-  const all = CATS.slice(0, 4);
-  const series = mode === 'all' ? all.map(c => ({ ...c, values: weeks.map(w => val(c.k, w)) }))
-    : [{ ...CATS.find(c => c.k === mode), values: weeks.map(w => val(mode, w)) }];
-  $('#wkTitle').textContent = mode === 'all' ? 'Cables por semana según su estado' : `${WEEK_MODES.find(m => m.k === mode).name} por semana`;
-  columnsChart($('#chWeek'), weeks, series, { label: $('#wkTitle').textContent });
-  const leg = $('#chWeek').parentNode.querySelector('.klg'); if (leg) leg.remove();
-  if (series.length > 1) $('#chWeek').insertAdjacentHTML('afterend', `<div class="klg">${series.map(s => `<span>${sw(s.css)}${esc(s.name)}</span>`).join('')}</div>`);
+  if (!d.weeks.length || !$('#chCum')) return;
+  const weeks = d.weeks, val = (c, w) => (d.wk.get(w) || d.zero())[c];
   let run = 0; const cum = weeks.map(w => run += val('tend', w));
   lineChart($('#chCum'), weeks, cum, d.hasSched ? d.total : d.tableTotal, { label: 'Cables tendidos acumulados por semana' });
-  $('#wkTable').innerHTML = `<thead><tr><th>Semana</th>${all.map(c => `<th>${c.name}</th>`).join('')}<th>Tendidos acumulados</th></tr></thead><tbody>`
-    + weeks.map((w, i) => `<tr><td>S${w}</td>${all.map(c => `<td>${nf(val(c.k, w))}</td>`).join('')}<td>${nf(cum[i])}</td></tr>`).join('') + '</tbody>';
+  $('#wkTable').innerHTML = '<thead><tr><th>Semana</th><th>Tendidos esa semana</th><th>Tendidos acumulados</th></tr></thead><tbody>'
+    + weeks.map((w, i) => `<tr><td>S${w}</td><td>${nf(val('tend', w))}</td><td>${nf(cum[i])}</td></tr>`).join('') + '</tbody>';
 }
 
 document.addEventListener('click', e => {
@@ -396,13 +405,10 @@ document.addEventListener('click', e => {
     const k = kb.dataset.key;
     if (k === 'working') applySearchPreset([['Status Actual', ['WORKING']], ['Released_CT_2', ['Y']]]);
     else if (k === 'coil') applySearchPreset([['Status Actual', ['COIL']], ['Released_CT_2', ['Y']]]);
-    else if (SC.pend) applySearchPreset([], true);
+    else if (SC.pendData) applySearchPreset([], true);
     else toast('Actualiza el CC_SCHEDULE en Ajustes para ver los pending', 4000);
     return;
   }
-  const b = e.target.closest('#wkChips .filter'); if (!b) return;
-  sState.mode = b.dataset.m; $$('#wkChips .filter').forEach(x => x.classList.toggle('on', x === b));
-  drawWeekly(statsData());
 });
 let rzT;
 window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(() => { if ($('#app').dataset.tab === 'stats') renderStats(); }, 150); });

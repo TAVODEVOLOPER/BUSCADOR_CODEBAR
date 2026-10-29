@@ -72,7 +72,8 @@ let scanList = LS.get('scanList', []);      // [{tag, code, found, time}]
 let flags = new Map();      // tag -> {notes, photos}
 let PDFS = [];              // PDF de Drive: [{id, name, date, key}]
 let PDFHASH = '';
-let current = -1;           // fila abierta
+let current = -1;           // fila abierta de la tabla
+let curSched = -1;          // fila abierta de los datos del CC_SCHEDULE (Pending por tender)
 let pickerTarget = 'ficha';
 let searchLimit = 60;
 
@@ -96,7 +97,7 @@ function setData(d, fuente) {
   DATEI = COL.has('Fecha de Status') ? COL.get('Fecha de Status') : -1;
   IDX = new Map();
   d.rows.forEach((r, i) => IDX.set(norm(r[TAGI]), i));
-  searchCols = null; colFilters.clear(); sfCol = -1;
+  searchCols = null; colFilters.clear(); sfCol = -1; pendFilter = false;
 
   const src = d.fuente === 'cloud' ? 'Google Sheet' : d.fuente === 'local' ? 'importada' : 'repositorio';
   setInfo(`${d.rows.length.toLocaleString('es-ES')} cables, ${d.columns.length} columnas, ${src}`, d.generado ? `Actualizada ${d.generado}` : '');
@@ -481,13 +482,16 @@ setTab($('#app').dataset.tab);
 
 /* ---------- Buscar ---------- */
 let statusFilter = '';
+/* Fuente de la búsqueda: la tabla CABLEADO, o los datos del CC_SCHEDULE cuando se abre "Pending por tender" */
+let pendFilter = false;   // PENDING + Released_CT = Y, con los datos del CC_SCHEDULE
+const SRC = () => (pendFilter && SC.pendData) ? SC.pendData : { columns: DATA.columns, rows: DATA.rows, tagi: TAGI, stati: STATI };
 function buildChips() {
-  const el = $('#statusChips');
-  if (STATI < 0) { el.innerHTML = ''; return; }
+  const el = $('#statusChips'), S = SRC();
+  if (S.stati < 0 || S.sched) { el.innerHTML = ''; return; }
   const cnt = {};
-  DATA.rows.forEach(r => { const s = r[STATI] || '(sin status)'; cnt[s] = (cnt[s] || 0) + 1; });
+  S.rows.forEach(r => { const s = r[S.stati] || '(sin status)'; cnt[s] = (cnt[s] || 0) + 1; });
   const items = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
-  el.innerHTML = `<button class="filter ${statusFilter === '' ? 'on' : ''}" data-s="">Todos ${DATA.rows.length}</button>` +
+  el.innerHTML = `<button class="filter ${statusFilter === '' ? 'on' : ''}" data-s="">Todos ${S.rows.length}</button>` +
     items.map(([s, n]) => `<button class="filter ${statusFilter === s ? 'on' : ''}" data-s="${esc(s)}">${esc(sentence(s))} ${n}</button>`).join('');
 }
 $('#statusChips').addEventListener('click', e => {
@@ -499,55 +503,62 @@ $('#q').addEventListener('input', () => { searchLimit = 60; renderSearch(); });
 /* Búsqueda por columnas, como el filtro de Excel:
    - "Buscar en": una o varias columnas donde se busca el texto.
    - "Filtrar por columna": marca valores de una o varias columnas (entre columnas se combinan con Y). */
-let searchCols = null;            // Set de índices de columna
+let searchCols = null;            // Set de índices de columna (de la fuente actual)
 const colFilters = new Map();     // índice de columna -> Set de valores marcados
-let sfMode = '', sfCol = -1, pendFilter = false;   // pendFilter: lista PENDING + Released_CT = Y del CC_SCHEDULE
+let sfMode = '', sfCol = -1, lastHits = [];
 const cellVal = (r, c) => { const v = String(r[c] ?? '').trim(); return v === '' ? '(vacío)' : v; };
+function setPend(on) {   // al cambiar de fuente las columnas son otras: se limpian los filtros
+  on = !!on; if (pendFilter === on) return;
+  pendFilter = on; searchCols = null; colFilters.clear(); sfCol = -1; statusFilter = ''; sfMode = '';
+}
 const getSearchCols = () => {
+  const S = SRC();
   if (!searchCols) {
-    const saved = LS.get('searchCols', null);
+    const saved = S.sched ? null : LS.get('searchCols', null);
     const ok = Array.isArray(saved) ? saved.filter(n => COL.has(n)).map(n => COL.get(n)) : [];
-    searchCols = new Set(ok.length ? ok : [TAGI]);
+    searchCols = new Set(ok.length ? ok : [S.tagi]);
   }
   return searchCols;
 };
+const saveSearchCols = () => { if (!pendFilter) LS.set('searchCols', [...searchCols].map(i => DATA.columns[i].name)); };
 function paintActive() {
+  const S = SRC();
   $('#btnClearF').hidden = !colFilters.size && !pendFilter;
   $('#activeF').innerHTML = (pendFilter ? `<button class="filter on" data-pend="1" title="Quitar este filtro">CC_SCHEDULE: PENDING + Released_CT = Y ✕</button>` : '')
-    + [...colFilters].map(([c, set]) => `<button class="filter on" data-c="${c}" title="Quitar este filtro">${esc(DATA.columns[c].name)}: ${set.size === 1 ? esc([...set][0]) : set.size + ' valores'} ✕</button>`).join('');
+    + [...colFilters].map(([c, set]) => `<button class="filter on" data-c="${c}" title="Quitar este filtro">${esc(S.columns[c].name)}: ${set.size === 1 ? esc([...set][0]) : set.size + ' valores'} ✕</button>`).join('');
 }
 /* viene del Resumen: abre Buscar con los filtros de la etiqueta ya puestos */
 function applySearchPreset(list, pend) {
-  colFilters.clear(); statusFilter = ''; pendFilter = !!pend; sfMode = ''; $('#q').value = ''; searchLimit = 60;
+  pendFilter = !pend; setPend(!!pend);        // fuerza el cambio de fuente y limpia
+  colFilters.clear(); statusFilter = ''; sfMode = ''; $('#q').value = ''; searchLimit = 60;
   list.forEach(([name, vals]) => { if (COL.has(name)) colFilters.set(COL.get(name), new Set(vals)); });
   setTab('search'); buildChips(); paintSF(); renderSearch();
 }
 function paintSF() {
   if (!DATA) return;
-  const sc = [...getSearchCols()];
-  const nm = i => DATA.columns[i].name;
+  const S = SRC(), sc = [...getSearchCols()];
+  const nm = i => S.columns[i].name;
   $('#btnSCols').textContent = 'Buscar en: ' + (sc.length === 1 ? nm(sc[0]) : sc.length + ' columnas');
   $('#btnSCols').classList.toggle('on', sfMode === 'cols');
   $('#btnAddF').classList.toggle('on', sfMode === 'filter');
   $('#btnSCols').setAttribute('aria-expanded', sfMode === 'cols');
   $('#btnAddF').setAttribute('aria-expanded', sfMode === 'filter');
-  $('#btnClearF').hidden = !colFilters.size;
   paintActive();
   const p = $('#sfPanel');
   p.hidden = !sfMode;
   if (!sfMode) return;
   if (sfMode === 'cols') {
     p.innerHTML = `<input class="sf-find" type="search" placeholder="Buscar columna" autocomplete="off"><div class="sf-list">` +
-      DATA.columns.map((c, i) => `<label class="sf-item" data-n="${esc(norm(c.name))}"><input type="checkbox" data-c="${i}" ${searchCols.has(i) ? 'checked' : ''}><span>${esc(c.name)}</span></label>`).join('') + `</div>
+      S.columns.map((c, i) => `<label class="sf-item" data-n="${esc(norm(c.name))}"><input type="checkbox" data-c="${i}" ${searchCols.has(i) ? 'checked' : ''}><span>${esc(c.name)}</span></label>`).join('') + `</div>
       <p class="help">El texto se busca en las columnas marcadas.</p>`;
   } else {
-    if (sfCol < 0) sfCol = STATI >= 0 ? STATI : TAGI;
+    if (sfCol < 0) sfCol = S.stati >= 0 ? S.stati : S.tagi;
     const cnt = new Map();
-    DATA.rows.forEach(r => { const v = cellVal(r, sfCol); cnt.set(v, (cnt.get(v) || 0) + 1); });
+    S.rows.forEach(r => { const v = cellVal(r, sfCol); cnt.set(v, (cnt.get(v) || 0) + 1); });
     const vals = [...cnt].sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'es', { numeric: true }));
     const sel = colFilters.get(sfCol) || new Set();
     p.innerHTML = `<label class="field"><span>Columna</span><select id="sfColSel">` +
-      DATA.columns.map((c, i) => `<option value="${i}" ${i === sfCol ? 'selected' : ''}>${esc(c.name)}${colFilters.has(i) ? ' •' : ''}</option>`).join('') + `</select></label>
+      S.columns.map((c, i) => `<option value="${i}" ${i === sfCol ? 'selected' : ''}>${esc(c.name)}${colFilters.has(i) ? ' •' : ''}</option>`).join('') + `</select></label>
       <input class="sf-find" type="search" placeholder="Buscar valor (${vals.length.toLocaleString('es-ES')} distintos)" autocomplete="off">
       <div class="sf-acts"><button class="btn" data-a="all" type="button">Marcar visibles</button><button class="btn" data-a="none" type="button">Desmarcar todo</button></div>
       <div class="sf-list">` + vals.slice(0, 800).map(([v, n]) => `<label class="sf-item" data-n="${esc(norm(v))}"><input type="checkbox" data-v="${esc(v)}" ${sel.has(v) ? 'checked' : ''}><span>${esc(v)}</span><small>${n}</small></label>`).join('') + `</div>
@@ -557,22 +568,23 @@ function paintSF() {
 const sfHide = (p) => { const t = norm(p.value); p.parentElement.querySelectorAll('.sf-item').forEach(el => el.hidden = !!t && !el.dataset.n.includes(t)); };
 $('#btnSCols').addEventListener('click', () => { sfMode = sfMode === 'cols' ? '' : 'cols'; paintSF(); });
 $('#btnAddF').addEventListener('click', () => { sfMode = sfMode === 'filter' ? '' : 'filter'; paintSF(); });
-$('#btnClearF').addEventListener('click', () => { colFilters.clear(); pendFilter = false; searchLimit = 60; paintSF(); renderSearch(); });
+$('#btnClearF').addEventListener('click', () => { colFilters.clear(); setPend(false); searchLimit = 60; buildChips(); paintSF(); renderSearch(); });
 $('#activeF').addEventListener('click', e => {
   const b = e.target.closest('[data-c],[data-pend]'); if (!b) return;
-  if (b.dataset.pend) pendFilter = false; else colFilters.delete(+b.dataset.c); searchLimit = 60; paintSF(); renderSearch();
+  if (b.dataset.pend) { setPend(false); buildChips(); } else colFilters.delete(+b.dataset.c);
+  searchLimit = 60; paintSF(); renderSearch();
 });
 $('#sfPanel').addEventListener('input', e => { if (e.target.classList.contains('sf-find')) sfHide(e.target); });
 $('#sfPanel').addEventListener('change', e => {
-  const t = e.target;
+  const t = e.target, S = SRC();
   if (t.id === 'sfColSel') { sfCol = +t.value; paintSF(); return; }
   if (t.dataset.c !== undefined && sfMode === 'cols') {
     const c = +t.dataset.c;
     t.checked ? searchCols.add(c) : searchCols.delete(c);
-    if (!searchCols.size) { searchCols.add(TAGI); }
-    LS.set('searchCols', [...searchCols].map(i => DATA.columns[i].name));
-    $('#btnSCols').textContent = 'Buscar en: ' + (searchCols.size === 1 ? DATA.columns[[...searchCols][0]].name : searchCols.size + ' columnas');
-    if (!t.checked && searchCols.has(TAGI) && searchCols.size === 1) paintSF();
+    if (!searchCols.size) { searchCols.add(S.tagi); }
+    saveSearchCols();
+    $('#btnSCols').textContent = 'Buscar en: ' + (searchCols.size === 1 ? S.columns[[...searchCols][0]].name : searchCols.size + ' columnas');
+    if (!t.checked && searchCols.has(S.tagi) && searchCols.size === 1) paintSF();
   } else if (t.dataset.v !== undefined) {
     const set = colFilters.get(sfCol) || new Set();
     t.checked ? set.add(t.dataset.v) : set.delete(t.dataset.v);
@@ -591,35 +603,34 @@ $('#sfPanel').addEventListener('click', e => {
 
 function renderSearch() {
   if (!DATA) return;
-  const q = norm($('#q').value);
+  if (pendFilter && !SC.pendData) setPend(false);
+  const S = SRC(), q = norm($('#q').value);
   const sc = [...getSearchCols()];
   const hits = [];
-  const okRow = (r) => {
-    if (statusFilter && (r[STATI] || '(sin status)') !== statusFilter) return false;
-    for (const [c, set] of colFilters) if (!set.has(cellVal(r, c))) return false;
-    return true;
-  };
-  if (pendFilter && SC.pend) {
-    // PENDING + Released_CT = Y del CC_SCHEDULE: los que aún no están en la tabla salen como texto
-    for (const t of SC.pend) {
-      if (q && !norm(t).includes(q)) continue;
-      const i = IDX.get(norm(t));
-      if (i === undefined) { if (!colFilters.size && !statusFilter) hits.push(t); continue; }
-      if (okRow(DATA.rows[i])) hits.push(i);
-    }
-  } else {
-    for (let i = 0; i < DATA.rows.length; i++) {
-      const r = DATA.rows[i];
-      if (q && !sc.some(c => norm(r[c]).includes(q))) continue;
-      if (okRow(r)) hits.push(i);
-    }
+  for (let i = 0; i < S.rows.length; i++) {
+    const r = S.rows[i];
+    if (S.stati >= 0 && !S.sched && statusFilter && (r[S.stati] || '(sin status)') !== statusFilter) continue;
+    if (q && !sc.some(c => norm(r[c]).includes(q))) continue;
+    let ok = true;
+    for (const [c, set] of colFilters) if (!set.has(cellVal(r, c))) { ok = false; break; }
+    if (ok) hits.push(i);
   }
+  lastHits = hits;
   paintActive(); if (!sfMode) paintSF();
+  const filtered = pendFilter || statusFilter || q || colFilters.size;
+  $('#btnAddAll').hidden = !hits.length || !filtered;
+  $('#btnAddAll').textContent = `Añadir los ${hits.length.toLocaleString('es-ES')} a la lista`;
   const shown = hits.slice(0, searchLimit);
-  $('#resCount').textContent = pendFilter ? `${hits.length.toLocaleString('es-ES')} cables` : hits.length === DATA.rows.length ? `${hits.length.toLocaleString('es-ES')} cables` : `${hits.length.toLocaleString('es-ES')} de ${DATA.rows.length.toLocaleString('es-ES')}`;
+  $('#resCount').textContent = hits.length === S.rows.length ? `${hits.length.toLocaleString('es-ES')} cables` : `${hits.length.toLocaleString('es-ES')} de ${S.rows.length.toLocaleString('es-ES')}`;
   $('#results').innerHTML = shown.map(i => {
-    if (typeof i === 'string') return `<div class="row nodata"><span class="t">${esc(i)}</span><span class="m"><span class="s">Pending por tender · aún no está en la tabla</span></span></div>`;
-    const r = DATA.rows[i], st = STATI >= 0 ? r[STATI] : '', f = flags.get(r[TAGI]);
+    const r = S.rows[i];
+    if (S.sched) {
+      const ci = n => S.columns.findIndex(c => c.name === n), f = ci('From_Tag'), tt = ci('To_Tag'), ins = ci('Installer');
+      const sub = [f >= 0 && tt >= 0 && (r[f] || r[tt]) ? `${r[f] || '?'} → ${r[tt] || '?'}` : '', ins >= 0 ? r[ins] : ''].filter(Boolean).join(' · ');
+      return `<button class="row st-warn ${i === curSched ? 'sel' : ''}" data-i="${i}" data-sched="1"><span class="t">${esc(r[S.tagi])}</span>
+        <span class="m"><span class="s">Pending por tender</span>${sub ? `<span>${esc(sub)}</span>` : ''}</span></button>`;
+    }
+    const st = STATI >= 0 ? r[STATI] : '', f = flags.get(r[TAGI]);
     const bits = [];
     if (f?.notes) bits.push(`${f.notes} ${f.notes === 1 ? 'nota' : 'notas'}`);
     if (f?.photos) bits.push(`${f.photos} ${f.photos === 1 ? 'foto' : 'fotos'}`);
@@ -633,7 +644,23 @@ function renderSearch() {
 }
 $('#results').addEventListener('click', e => {
   if (e.target.id === 'btnMore') { searchLimit += 100; renderSearch(); return; }
-  const it = e.target.closest('.row'); if (it) openCable(+it.dataset.i, true);
+  const it = e.target.closest('.row'); if (!it) return;
+  if (it.dataset.sched) openSched(+it.dataset.i); else openCable(+it.dataset.i, true);
+});
+/* todos los cables que salen con el filtro puesto, a la lista (Lista y PDF de trabajo) */
+$('#btnAddAll').addEventListener('click', () => {
+  const S = SRC(); let add = 0, dup = 0;
+  const have = new Set(scanList.map(x => norm(x.tag)));
+  const now = new Date().toISOString();
+  for (const i of lastHits) {
+    const tag = String(S.rows[i][S.tagi]).trim(), k = norm(tag);
+    if (have.has(k)) { dup++; continue; }
+    have.add(k);
+    scanList.push({ tag, code: tag, found: S.sched ? true : true, time: now, ...(S.sched ? { sched: true } : {}) });
+    add++;
+  }
+  LS.set('scanList', scanList); renderList();
+  toast(add ? `${add.toLocaleString('es-ES')} cables añadidos a la lista${dup ? ` (${dup} ya estaban)` : ''}` : 'Todos esos cables ya estaban en la lista', 3500);
 });
 
 /* ---------- PDF de pulling (los pone el propietario en Drive; aquí solo se leen) ---------- */
@@ -680,13 +707,13 @@ async function refreshFlags() {
 }
 
 function renderEmpty() {
-  if (current >= 0) return;
+  if (current >= 0 || curSched >= 0) return;
   $('#vBody').innerHTML = `<div class="d-empty"><h2>Ningún cable abierto</h2><p>Escanea un código o busca un tag y aquí verás su ficha, el PDF de pulling, las fotos y las notas.</p></div>`;
   $('#vAddList').hidden = true;
 }
 
 function openCable(i, animate) {
-  current = i;
+  current = i; curSched = -1;
   $('#view').classList.add('open');
   $('#vAddList').hidden = false;
   cam.paused = !isWide();
@@ -696,9 +723,36 @@ function openCable(i, animate) {
   $$(`.row[data-i="${i}"]`).forEach(r => r.classList.add('sel'));
 }
 
+/* ficha de un cable "Pending por tender": todos sus datos tal como están en el CC_SCHEDULE */
+function openSched(i) {
+  current = -1; curSched = i;
+  $('#view').classList.add('open'); $('#vAddList').hidden = false;
+  cam.paused = !isWide();
+  if (!isWide() && !(history.state && history.state.detail)) history.pushState({ detail: 1 }, '');
+  renderSched();
+  $$('.row.sel').forEach(r => r.classList.remove('sel'));
+  $$(`.row[data-sched][data-i="${i}"]`).forEach(r => r.classList.add('sel'));
+}
+function renderSched() {
+  const P = SC.pendData; if (!P || curSched < 0 || !P.rows[curSched]) return;
+  const r = P.rows[curSched], tag = r[P.tagi], hide = LS.get('hideEmpty', false);
+  const kv = P.columns.map((c, k) => {
+    const v = r[k]; if (hide && !v) return '';
+    return `<div class="kv"><span class="l">${esc(c.letter)}</span><span class="n">${esc(c.name)}</span><span class="v ${v ? '' : 'none'}">${v ? esc(fmtVal(v)) : 'Sin dato'}</span></div>`;
+  }).join('');
+  $('#vAddList').textContent = scanList.some(x => norm(x.tag) === norm(tag)) ? 'En la lista' : 'Añadir a la lista';
+  $('#vBody').innerHTML = `
+    <div class="d-top">
+      <div class="marker"><span class="sleeve"></span><span class="mk-body"><b>${esc(tag)}</b></span><button class="btn small quiet copy" id="btnCopyTag">Copiar</button></div>
+      <div class="d-status st-warn"><i></i><div><b>Pending por tender</b><small>Datos del CC_SCHEDULE</small></div></div>
+    </div>
+    <label class="opt"><input type="checkbox" id="hideEmpty" ${hide ? 'checked' : ''}> Ocultar las columnas sin dato</label>
+    <div class="kvs">${kv}</div>
+    ${IDX.has(norm(tag)) ? '<div class="btn-row"><button class="btn" id="openTbl">Abrir la ficha de la tabla CABLEADO</button></div>' : ''}`;
+}
 function closeCable() {
   $('#view').classList.remove('open');
-  current = -1; cam.paused = false;
+  current = -1; curSched = -1; cam.paused = false;
   renderEmpty(); renderSearch(); renderList();
 }
 
@@ -767,7 +821,14 @@ async function renderCable(animate) {
 }
 
 $('#vBody').addEventListener('click', async e => {
-  const t = e.target.closest('button,img'); if (!t || current < 0) return;
+  const t = e.target.closest('button,img');
+  if (t && current < 0 && curSched >= 0 && SC.pendData) {
+    const tg = SC.pendData.rows[curSched][SC.pendData.tagi];
+    if (t.id === 'btnCopyTag') { try { await navigator.clipboard.writeText(tg); toast('Tag copiado'); } catch { toast('No se pudo copiar el tag'); } }
+    else if (t.id === 'openTbl') openCable(IDX.get(norm(tg)), true);
+    return;
+  }
+  if (!t || current < 0) return;
   const tag = DATA.rows[current][TAGI];
   if (t.id === 'addPhoto') $('#filePhoto').click();
   else if (t.id === 'addPhotoGal') $('#filePhotoGal').click();
@@ -808,15 +869,15 @@ $('#vBody').addEventListener('click', async e => {
     } catch (err) { if (w) w.close(); toast('No se pudo abrir el PDF: ' + err.message, 4500); }
   } else if (t.dataset.photo) openLightbox(+t.dataset.photo);
 });
-$('#vBody').addEventListener('change', e => { if (e.target.id === 'hideEmpty') { LS.set('hideEmpty', e.target.checked); renderCable(); } });
+$('#vBody').addEventListener('change', e => { if (e.target.id === 'hideEmpty') { LS.set('hideEmpty', e.target.checked); current >= 0 ? renderCable() : renderSched(); } });
 
 $('#vBack').addEventListener('click', () => { if (history.state && history.state.detail) history.back(); else closeCable(); });
 window.addEventListener('popstate', () => { if (!isWide() && current >= 0) closeCable(); });
 $('#vAddList').addEventListener('click', () => {
-  if (current < 0) return;
-  const tag = DATA.rows[current][TAGI];
+  if (current < 0 && !(curSched >= 0 && SC.pendData)) return;
+  const tag = current >= 0 ? DATA.rows[current][TAGI] : SC.pendData.rows[curSched][SC.pendData.tagi];
   if (scanList.some(x => norm(x.tag) === norm(tag))) return toast('Ese cable ya está en la lista');
-  scanList.push({ tag, code: tag, found: true, time: new Date().toISOString() });
+  scanList.push({ tag, code: tag, found: true, time: new Date().toISOString(), ...(current < 0 ? { sched: true } : {}) });
   LS.set('scanList', scanList); renderList(); $('#vAddList').textContent = 'En la lista'; toast('Añadido a la lista');
 });
 
@@ -877,12 +938,21 @@ $('#lbDel').addEventListener('click', async () => {
 /* ---------- Lista de escaneos ---------- */
 const listColumns = () => colsSel('lista');
 
+/* valor de una columna para un cable de la lista: de la tabla CABLEADO y, si no está ahí, del CC_SCHEDULE */
+const nname = s => String(s ?? '').toUpperCase().replace(/[\s_]+/g, '');
+function listVal(tag, name) {
+  if (nname(name) === 'CABLENUMBER') return tag;
+  const ri = IDX.get(norm(tag));
+  if (ri !== undefined && COL.has(name)) return DATA.rows[ri][COL.get(name)];
+  const pi = SC.pendIdx && SC.pendIdx.get(norm(tag));
+  if (pi !== undefined) { const k = SC.pendData.columns.findIndex(c => nname(c.name) === nname(name)); if (k >= 0) return SC.pendData.rows[pi][k]; }
+  return '';
+}
 function listMatrix(withNotes = true) {
   const cols = listColumns();
   const head = ['#', 'Hora', 'Código leído', 'Encontrado', ...cols, ...(withNotes ? ['Notas'] : [])];
   return { head, rows: scanList.map((x, n) => {
-    const ri = IDX.get(norm(x.tag));
-    const vals = cols.map(c => ri === undefined ? '' : DATA.rows[ri][COL.get(c)]);
+    const vals = cols.map(c => listVal(x.tag, c));
     return [n + 1, new Date(x.time).toLocaleString('es-ES'), x.code, x.found ? 'SI' : 'NO', ...vals, ...(withNotes ? [x.notes || ''] : [])];
   }) };
 }
@@ -905,9 +975,8 @@ function renderList() {
   const t = $('#listTable');
   t.innerHTML = '<thead><tr><th>#</th><th>Tag</th>' + cols.filter(n => n !== DATA.tagCol).map(n => `<th>${esc(n)}</th>`).join('') + '<th></th></tr></thead><tbody>' +
     scanList.map((x, n) => {
-      const ri = IDX.get(norm(x.tag));
       return `<tr class="${x.found ? '' : 'nf'}" data-n="${n}"><td>${n + 1}</td><td class="tagc">${esc(x.tag)}</td>` +
-        cols.filter(k => k !== DATA.tagCol).map(k => `<td>${ri === undefined ? '' : esc(fmtVal(DATA.rows[ri][COL.get(k)]))}</td>`).join('') +
+        cols.filter(k => k !== DATA.tagCol).map(k => `<td>${esc(fmtVal(String(listVal(x.tag, k) ?? '')))}</td>`).join('') +
         `<td><button class="x" data-del="${n}" aria-label="Quitar de la lista">✕</button></td></tr>`;
     }).join('') + '</tbody>';
 }
@@ -915,7 +984,10 @@ $('#listTable').addEventListener('click', e => {
   const d = e.target.closest('[data-del]');
   if (d) { scanList.splice(+d.dataset.del, 1); LS.set('scanList', scanList); renderList(); return; }
   const tr = e.target.closest('tr[data-n]');
-  if (tr) { const x = scanList[+tr.dataset.n]; const ri = IDX.get(norm(x.tag)); if (ri !== undefined) openCable(ri, true); }
+  if (tr) {
+    const x = scanList[+tr.dataset.n], ri = IDX.get(norm(x.tag)), pi = SC.pendIdx && SC.pendIdx.get(norm(x.tag));
+    if (ri !== undefined) openCable(ri, true); else if (pi !== undefined) openSched(pi);
+  }
 });
 
 function download(blob, name) {
@@ -964,6 +1036,81 @@ $('#btnClear').addEventListener('click', () => {
   if (!scanList.length) return;
   if (!confirm('¿Vaciar la lista de escaneos?')) return;
   scanList = []; LS.set('scanList', scanList); renderList();
+});
+
+/* ---------- Lista de trabajo en PDF ---------- */
+const PDF_NOTAS = '__NOTAS__';
+const PDF_DEFAULT = [['Installer'], ['CABLE_NUMBER'], ['Released_CT'], ['Cable_Routing_Produc', 'Cable_Routing_Product'], ['Cable_Routing_Coil Total'], ['MiniRuta_From'], ['MiniRuta_to'], [PDF_NOTAS]];
+function pdfNames() {   // columnas de la tabla y, además, las del CC_SCHEDULE que la tabla no tiene
+  const names = DATA.columns.map(c => c.name), seen = new Set(names.map(nname));
+  if (SC.pendData) SC.pendData.columns.forEach(c => { if (c.name && !seen.has(nname(c.name))) { names.push(c.name); seen.add(nname(c.name)); } });
+  return names;
+}
+function pdfDefaults() {
+  const names = pdfNames(), out = [];
+  PDF_DEFAULT.forEach(alts => {
+    if (alts[0] === PDF_NOTAS) { out.push(PDF_NOTAS); return; }
+    for (const al of alts) { const f = names.find(n => nname(n) === nname(al)); if (f) { out.push(f); break; } }
+  });
+  return out;
+}
+let pdfSel = [];
+function openPdf() {
+  if (!scanList.length) return toast('La lista está vacía. Añade cables desde Buscar o escaneándolos.');
+  const saved = LS.get('pdfCols', null), names = new Set([...pdfNames(), PDF_NOTAS]);
+  pdfSel = Array.isArray(saved) && saved.length ? saved.filter(n => names.has(n)) : pdfDefaults();
+  if (!pdfSel.length) pdfSel = pdfDefaults();
+  $('#pTitle').value = LS.get('pdfTitle', 'Lista de trabajo');
+  $('#pdfModal').hidden = false; renderPdfPicker();
+}
+function renderPdfPicker() {
+  const f = nname($('#pFilter').value), all = [PDF_NOTAS, ...pdfNames()];
+  const label = n => n === PDF_NOTAS ? 'NOTAS (columna en blanco para observaciones)' : n;
+  $('#pHelp').textContent = `${scanList.length.toLocaleString('es-ES')} cables. Orden de columnas: ${pdfSel.map(n => n === PDF_NOTAS ? 'NOTAS' : n).join(' / ') || 'ninguna'}`;
+  $('#pList').innerHTML = all.filter(n => !f || nname(label(n)).includes(f)).map(n => {
+    const k = pdfSel.indexOf(n);
+    return `<label class="citem"><input type="checkbox" data-n="${esc(n)}" ${k >= 0 ? 'checked' : ''}>${k >= 0 ? `<span class="ord">${k + 1}</span>` : '<b></b>'}<span>${esc(label(n))}</span></label>`;
+  }).join('');
+}
+$('#pList').addEventListener('change', e => {
+  const n = e.target.dataset.n; if (n === undefined) return;
+  if (e.target.checked) { if (!pdfSel.includes(n)) pdfSel.push(n); } else pdfSel = pdfSel.filter(x => x !== n);
+  LS.set('pdfCols', pdfSel); renderPdfPicker();
+});
+$('#pFilter').addEventListener('input', renderPdfPicker);
+$('#pDefault').addEventListener('click', () => { pdfSel = pdfDefaults(); LS.set('pdfCols', pdfSel); renderPdfPicker(); });
+$('#pClose').addEventListener('click', () => { $('#pdfModal').hidden = true; });
+$('#btnPdf').addEventListener('click', () => DATA ? openPdf() : toast('Todavía no hay tabla cargada'));
+const loadScript = src => new Promise((ok, ko) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => ko(new Error('no se pudo cargar ' + src)); document.head.appendChild(s); });
+$('#pGo').addEventListener('click', async () => {
+  if (!pdfSel.length) return toast('Elige al menos una columna');
+  try {
+    $('#pGo').disabled = true; toast('Preparando el PDF', 8000);
+    if (!(window.jspdf && window.jspdf.jsPDF)) { await loadScript('vendor/jspdf.umd.min.js'); await loadScript('vendor/jspdf.plugin.autotable.min.js'); }
+    const title = $('#pTitle').value.trim() || 'Lista de trabajo'; LS.set('pdfTitle', title);
+    const head = pdfSel.map(n => n === PDF_NOTAS ? 'NOTAS' : n);
+    const body = scanList.map(x => pdfSel.map(n => n === PDF_NOTAS ? '' : fmtVal(String(listVal(x.tag, n) ?? '').trim())));
+    const doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+    const stampTxt = new Date().toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
+    const notasIdx = pdfSel.indexOf(PDF_NOTAS);
+    doc.autoTable({
+      head: [head], body, startY: 20, margin: { top: 20, left: 8, right: 8, bottom: 12 },
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 1.6, lineColor: [140, 150, 160], lineWidth: 0.15, valign: 'middle', overflow: 'linebreak', minCellHeight: 9 },
+      headStyles: { fillColor: [16, 32, 48], textColor: 255, fontStyle: 'bold', minCellHeight: 7 },
+      alternateRowStyles: { fillColor: [246, 248, 250] },
+      columnStyles: notasIdx >= 0 ? { [notasIdx]: { cellWidth: 60 } } : {},
+      rowPageBreak: 'avoid',
+      didDrawPage: d => {
+        doc.setFontSize(14); doc.setTextColor(16, 32, 48); doc.text(title, 8, 11);
+        doc.setFontSize(8.5); doc.setTextColor(90, 100, 110); doc.text(`${stampTxt}  |  ${scanList.length} cables`, 8, 16.5);
+        doc.text(`Pagina ${d.pageNumber}`, W - 8, H - 5, { align: 'right' });
+      },
+    });
+    doc.save(`lista_de_trabajo_${stamp()}.pdf`);
+    toast('PDF descargado', 3000);
+  } catch (e) { toast('No se pudo crear el PDF: ' + e.message, 5000); }
+  finally { $('#pGo').disabled = false; }
 });
 
 /* ---------- Selector de columnas ---------- */

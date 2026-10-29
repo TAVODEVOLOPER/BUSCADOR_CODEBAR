@@ -159,6 +159,7 @@
             <button class="filter" id="btnSCols" type="button" aria-expanded="false">Buscar en: Tag</button>
             <button class="filter" id="btnAddF" type="button" aria-expanded="false">Filtrar por columna</button>
             <button class="filter" id="btnClearF" type="button" hidden>Quitar filtros</button>
+            <button class="filter add" id="btnAddAll" type="button" hidden>Añadir todos a la lista</button>
           </div>
           <div class="sfpanel" id="sfPanel" hidden></div>
           <div class="filters" id="activeF"></div>
@@ -170,7 +171,8 @@
         <section id="tab-list" class="panel" aria-label="Lista de escaneos">
           <h2 class="ptitle">Lista de escaneos</h2>
           <div class="toolbar">
-            <button class="btn primary" id="btnXlsx">Descargar Excel</button>
+            <button class="btn primary" id="btnPdf">Lista de trabajo en PDF</button>
+            <button class="btn" id="btnXlsx">Descargar Excel</button>
             <button class="btn" id="btnCsv">CSV</button>
             <button class="btn" id="btnCopy">Copiar</button>
             <button class="btn" id="btnSheet">Enviar a Google Sheet</button>
@@ -200,6 +202,24 @@
       </div>
       <div class="detail-body" id="vBody"></div>
     </section>
+  </div>
+</div>
+
+<!-- LISTA DE TRABAJO EN PDF -->
+<div id="pdfModal" class="overlay modal" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Lista de trabajo en PDF">
+    <div class="sheet-head">
+      <h2>Lista de trabajo en PDF</h2>
+      <button class="btn quiet" id="pClose">Cerrar</button>
+    </div>
+    <div class="cols-tools">
+      <input id="pTitle" type="text" placeholder="Título del PDF" aria-label="Título del PDF">
+      <input id="pFilter" type="search" placeholder="Filtrar columnas" aria-label="Filtrar columnas">
+      <button class="btn small" id="pDefault">Las de siempre</button>
+    </div>
+    <p class="help pdf-help" id="pHelp"></p>
+    <div class="sheet-body" id="pList"></div>
+    <div class="pdf-foot"><button class="btn primary" id="pGo">Descargar PDF</button></div>
   </div>
 </div>
 

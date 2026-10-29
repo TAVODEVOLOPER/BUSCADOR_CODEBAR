@@ -251,10 +251,11 @@ function getSchedule_(clientHash) {
   var filtro = String(DISCIPLINA_FILTRO || '').trim().toUpperCase();
   if (filtro && dc < 0) throw new Error('No encuentro la columna Discipline en ' + HOJA_SCHEDULE + '. Pégala junto a CABLE_NUMBER o deja DISCIPLINA_FILTRO vacío en el script');
   var n = sh.getLastRow() - hr - 1;
-  var tags = [], pend = [], todos = 0, excl = 0;
+  var tags = [], pend = [], pendRows = [], todos = 0, excl = 0;
   if (n > 0) {
     var col = sh.getRange(hr + 2, hc + 1, n, 1).getDisplayValues();
     var dis = dc >= 0 ? sh.getRange(hr + 2, dc + 1, n, 1).getDisplayValues() : null;
+    var all = sh.getRange(hr + 2, 1, n, lastCol).getDisplayValues();   // para dar los datos completos de los PENDING
     var cst = sc >= 0 ? sh.getRange(hr + 2, sc + 1, n, 1).getDisplayValues() : null;
     var rel = rc >= 0 ? sh.getRange(hr + 2, rc + 1, n, 1).getDisplayValues() : null;
     var seen = {};
@@ -266,12 +267,14 @@ function getSchedule_(clientHash) {
       var st = cst ? String(cst[i][0]).trim().toUpperCase() : '';
       if (ESTADOS_EXCLUIDOS.indexOf(st) >= 0) { excl++; continue; }          // DAMAGED y SPARE no cuentan
       tags.push(t);
-      if (st === 'PENDING' && rel && String(rel[i][0]).trim().toUpperCase() === 'Y') pend.push(t);   // PENDING POR TENDER
+      if (st === 'PENDING' && rel && String(rel[i][0]).trim().toUpperCase() === 'Y') { pend.push(t); pendRows.push(all[i]); }   // PENDING POR TENDER, con todos sus datos
     }
   }
-  var hash = md5_(filtro + '|' + tags.length + '|' + tags.join('\n') + '|' + pend.join('\n'));
+  var pendCols = [];
+  for (var k = 0; k < lastCol; k++) pendCols.push(String(head[hr][k]).trim());
+  var hash = md5_(filtro + '|' + tags.length + '|' + tags.join('\n') + '|' + JSON.stringify(pendRows));
   if (clientHash && clientHash === hash) return { ok: true, same: true, hash: hash };
-  return { ok: true, hash: hash, total: tags.length, todos: todos, excluidos: excl, filtro: filtro, tags: tags, pend: pend };
+  return { ok: true, hash: hash, total: tags.length, todos: todos, excluidos: excl, filtro: filtro, tags: tags, pend: pend, pendCols: pendCols, pendRows: pendRows };
 }
 
 function getSync_(pdfHash) {

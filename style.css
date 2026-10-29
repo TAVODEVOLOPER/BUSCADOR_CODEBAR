@@ -439,3 +439,34 @@ button.kpi:hover,button.kpi:focus-visible{background:var(--raise);border-left-co
   @keyframes vdraw{from{stroke-dashoffset:1}}
   @keyframes vfade{from{opacity:0}}
 }
+
+.filter.add{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.filter.add[hidden]{display:none}
+.pdf-help{padding:6px 16px 0;margin:0}
+.pdf-foot{padding:10px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--hair);background:var(--raise)}
+.pdf-foot .btn{width:100%}
+#pTitle{flex:1 1 100%}
+.citem .ord{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;border-radius:11px;background:var(--ink);color:var(--surface);font-size:12px;font-weight:700}
+
+/* Resumen: franja de avance general arriba */
+.banner{grid-column:1/-1;position:relative;margin:4px 0 8px;padding:22px 22px 20px;background:var(--fathom);color:#fff;border-radius:var(--r);overflow:hidden}
+.banner::after{content:"";position:absolute;left:0;right:0;bottom:0;height:5px;background:var(--stripe)}
+.banner .bn-top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px 24px}
+.banner .hero-num{font-size:clamp(64px,13vw,120px);line-height:.9;color:#fff;letter-spacing:-.02em}
+.banner .hero-num small{font-size:.38em;margin-left:6px;color:var(--cy)}
+.banner .bn-txt{font-size:17px;line-height:1.35;max-width:36ch;color:#C9D6DE;padding-bottom:6px}
+.banner .bn-txt b{color:#fff}
+.banner .bn-track{height:16px;margin-top:20px;background:rgba(255,255,255,.14);border-radius:8px;overflow:hidden}
+.banner .bn-track i{display:block;height:100%;min-width:6px;background:var(--v-good);border-radius:8px}
+.banner .bn-facts{display:flex;flex-wrap:wrap;gap:6px 22px;margin-top:12px;font-size:14px;color:#C9D6DE}
+.banner .bn-facts b{color:#fff;font-size:16px}
+.banner .sb{margin-top:16px}
+.banner .sb-t{color:#AFC0CB}
+.banner .sb-t b{color:#fff}
+@media (prefers-reduced-motion:no-preference){
+  .banner .hero-num{animation:vrise .8s cubic-bezier(.2,.7,.2,1) both}
+  .banner .bn-track i{transform-origin:0 50%;animation:vgrowx 1.2s cubic-bezier(.2,.7,.2,1) .2s both}
+  .banner .bn-facts span{animation:vrise .6s ease-out both}
+  .banner .bn-facts span:nth-child(2){animation-delay:.08s}.banner .bn-facts span:nth-child(3){animation-delay:.16s}.banner .bn-facts span:nth-child(4){animation-delay:.24s}
+  @keyframes vrise{from{opacity:0;transform:translateY(10px)}}
+}

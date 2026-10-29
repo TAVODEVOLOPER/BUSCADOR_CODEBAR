@@ -51,6 +51,8 @@ La pestaña **Resumen** muestra el avance general (% de cables tendidos sobre el
 - **Estados:** tabla con el conteo de `Status Actual` (sin PENDING, para no confundir con el total del CC_SCHEDULE).
 - **Metros:** salen de la columna `REAL_TENDIDO` de la tabla; botones Tendido / Coil / Tendido + Coil.
 - **Etiquetas clave** (se pulsan y abren Buscar con el filtro puesto): *Working por completar* (`WORKING` + `Released_CT_2 = Y`), *Coil por completar* (`COIL` + `Released_CT_2 = Y`) y *Pending por tender* (del CC_SCHEDULE: `CURRENT_STATUS = PENDING` + `Released_CT = Y`).
+- **Pending por tender** abre Buscar con los datos de esos cables sacados del CC_SCHEDULE (todas sus columnas): puedes filtrarlos por cualquier columna del CC_SCHEDULE y abrir su ficha. Hay que pulsar Ajustes → Actualizar el CC_SCHEDULE para que se descarguen.
+- Con cualquier filtro puesto en Buscar aparece **Añadir los N a la lista**; en Lista, **Lista de trabajo en PDF** deja elegir y ordenar las columnas (por defecto Installer, CABLE_NUMBER, Released_CT, Cable_Routing_Produc, Cable_Routing_Coil Total, MiniRuta_From, MiniRuta_to y una columna NOTAS en blanco para observaciones).
 - Del total INS se quitan los cables con `CURRENT_STATUS` DAMAGED o SPARE (el CC_SCHEDULE necesita las columnas `CURRENT_STATUS` y `Released_CT`).
 - **Estado y semana:** salen de la tabla CABLEADO (columnas `Status Actual` y `SEMANA`).
 - En la app, **Ajustes → Actualizar el CC_SCHEDULE** (también se descarga solo al abrir; solo si cambió).
