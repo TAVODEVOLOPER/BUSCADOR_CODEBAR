@@ -42,6 +42,7 @@
       <button class="snav js-refresh" data-proxy="btnRefresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-4.5L4 9m0-5v5h5M4 13a8 8 0 0 0 14 4.5L20 15m0 5v-5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Actualizar</span><small id="lastUpd"></small><b class="pend-badge" hidden></b></button>
       <button class="snav" data-proxy="btnTheme"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg><span class="js-themelbl">Tema</span></button>
       <button class="snav" data-proxy="btnCols"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 5h4v14h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Columnas</span></button>
+      <button class="snav js-logout" data-proxy="btnLogout" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Salir</span></button>
       <button class="snav" data-proxy="btnSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Ajustes</span></button>
       <button class="snav" data-proxy="btnInstall" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0l-4-4m4 4l4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Instalar app</span></button>
     </nav>
@@ -77,6 +78,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 5h4v14h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Columnas</span>
       </button>
+      <button class="tool js-logout" id="btnLogout" aria-label="Salir" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button class="tool" id="btnSettings" aria-label="Ajustes">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
         <span>Ajustes</span>
@@ -242,12 +244,15 @@
 
 <!-- ENTRAR CON CÓDIGO DE PERSONAL -->
 <div id="loginModal" class="overlay login" hidden>
+  <i class="lg-bg" aria-hidden="true"></i><i class="lg-glow" aria-hidden="true"></i><i class="lg-scan" aria-hidden="true"></i>
   <form class="login-box" id="loginForm" autocomplete="off">
-    <h2>Entrar</h2>
-    <p class="muted">Escribe tu código de personal para usar la app.</p>
+    <svg class="lg-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <h2>Cable Scan BW04</h2>
+    <p class="lg-sub">Escribe tu código de personal para entrar.</p>
     <label class="field"><span>Código</span><input id="loginCode" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" spellcheck="false" required></label>
     <p class="pin-err" id="loginErr" role="alert"></p>
     <button class="btn primary" id="loginGo" type="submit">Entrar</button>
+    <p class="lg-by"><span class="js-version"></span> | Gustavo Developer</p>
   </form>
 </div>
 
@@ -333,7 +338,7 @@
       <section>
         <h3>Conexión con Google</h3>
         <p class="muted" id="sInfo"></p>
-        <p class="muted" id="sUser"></p><button class="btn small" id="sLogout" hidden>Cambiar de persona</button>
+        <p class="muted" id="sUser"></p><button class="btn small" id="sLogout" hidden>Salir</button>
         <label class="field"><span>URL de la aplicación web (termina en /exec)</span>
           <input id="sScriptUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
         <label class="field"><span>Clave</span>

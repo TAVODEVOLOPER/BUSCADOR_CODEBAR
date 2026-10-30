@@ -1277,6 +1277,8 @@ async function openSettings() {
   $('#sInfo').textContent = (DATA ? `Tabla: ${DATA.rows.length} cables y ${DATA.columns.length} columnas, ${DATA.generado || ''}. ` : 'Sin tabla todavía. ')
     + (cloud.on() ? `Conectado. ${PDFS.length} PDF en Drive. Pendientes de subir: ${pend}.` : 'Falta solo la clave: escribe la que pusiste en TOKEN dentro del script.');
 }
+const paintLogout = () => $$('.js-logout').forEach(b => { b.hidden = !(cloud.on() && LS.get('userCode', '')); });
+$$('.js-logout').forEach(b => b.addEventListener('click', () => { if (confirm('¿Salir? Para volver a entrar hará falta tu código.')) loginNeeded(''); }));
 $('#sLogout').addEventListener('click', () => { $('#setModal').hidden = true; loginNeeded(''); });
 $('#sClose').addEventListener('click', () => { saveSettingsFields(); $('#setModal').hidden = true; });
 $('#sPull').addEventListener('click', async () => { saveSettingsFields(false); await pullTable(false); });
@@ -1473,7 +1475,7 @@ async function ensureLogin() {
   try { await apiGet('login'); } catch { /* si el servidor pide código, apiGet ya abrió la pantalla; sin cobertura se sigue */ }
 }
 function loginNeeded(msg) {
-  LS.set('userCode', ''); LS.set('userName', '');
+  LS.set('userCode', ''); LS.set('userName', ''); paintLogout();
   $('#loginErr').textContent = LS.get('userSeen', false) ? (msg || '') : '';
   $('#loginModal').hidden = false; setTimeout(() => $('#loginCode').focus(), 50);
 }
@@ -1483,7 +1485,7 @@ $('#loginForm').addEventListener('submit', async e => {
   $('#loginGo').disabled = true; $('#loginErr').textContent = '';
   try {
     const j = await apiGet('login', { user: code });
-    LS.set('userCode', code); LS.set('userName', j.nombre || ''); LS.set('userNotes', !!j.notas); LS.set('userSeen', true);
+    LS.set('userCode', code); LS.set('userName', j.nombre || ''); LS.set('userNotes', !!j.notas); LS.set('userSeen', true); paintLogout();
     $('#loginModal').hidden = true; $('#loginCode').value = '';
     toast(j.nombre ? 'Hola, ' + j.nombre : 'Sesión iniciada');
     if (DATA) { renderCable && current >= 0 && renderCable(); }
@@ -1495,6 +1497,7 @@ $('#loginForm').addEventListener('submit', async e => {
 /* Sincronización: sube lo pendiente y trae lo de los demás */
 let syncing = false, resync = false, cloudStarted = false;
 function startCloud() {
+  paintLogout();
   if (cloudStarted || !cloud.on()) return;
   cloudStarted = true;
   ensureLogin().then(() => pullTable(true)).then(() => syncCloud(true)).then(() => typeof pullSchedule === 'function' && pullSchedule(true));

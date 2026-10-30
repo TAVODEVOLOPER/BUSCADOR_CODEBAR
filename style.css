@@ -580,3 +580,30 @@ body{background:var(--bg) url(bg-m.jpg) center/cover fixed no-repeat}
 @media (min-width:900px){.appfoot{display:none}}
 .foot-ver.dev{font-family:var(--font);font-weight:700;color:#DCE7ED}
 .overlay.pv .pv-bar,.sheet{background:var(--surface)}
+
+/* pantalla de entrada */
+.overlay.login{background:#06121b;overflow:hidden;color:#fff}
+.lg-bg{position:absolute;inset:0;background:linear-gradient(rgba(5,14,22,.5),rgba(5,14,22,.78)),url(bg-m.jpg) center/cover no-repeat;z-index:0}
+@media (min-width:900px){.lg-bg{background-image:linear-gradient(rgba(5,14,22,.5),rgba(5,14,22,.78)),url(bg.jpg)}}
+.login-box{position:relative;z-index:2;padding:26px 22px;border-radius:14px;background:rgba(10,24,36,.62);border:1px solid rgba(120,200,255,.28);box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04) inset;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.login-box .field span{color:#C9D9E3}
+.login-box input{background:rgba(255,255,255,.95);color:#0B1A24;text-transform:uppercase;letter-spacing:.12em;font:700 18px var(--mono)}
+.login-box .muted,.lg-sub{color:#C9D9E3;margin:0}
+.login-box .pin-err{color:#ffb4b4;min-height:1.2em;margin:0}
+.lg-ico{width:44px;height:44px;color:#4FC3F7;filter:drop-shadow(0 0 10px #4FC3F7)}
+.lg-by{margin:6px 0 0;text-align:center;font:600 11px var(--mono);color:#9DB6C4}
+.lg-glow{position:absolute;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,rgba(79,195,247,.35),transparent 65%);left:50%;top:50%;margin:-260px 0 0 -260px;z-index:1;pointer-events:none}
+.lg-scan{position:absolute;left:0;right:0;height:2px;top:0;background:linear-gradient(90deg,transparent,#4FC3F7,transparent);opacity:.7;z-index:1;pointer-events:none}
+@media (prefers-reduced-motion:no-preference){
+  .lg-bg{animation:lgzoom 24s ease-in-out infinite alternate}
+  .lg-glow{animation:lgpulse 5s ease-in-out infinite}
+  .lg-scan{animation:lgscan 6s linear infinite}
+  .login-box{animation:lgin .7s cubic-bezier(.2,.8,.2,1) both}
+  .lg-ico{animation:lgpulse2 3s ease-in-out infinite}
+}
+@keyframes lgzoom{from{transform:scale(1)}to{transform:scale(1.14)}}
+@keyframes lgpulse{0%,100%{transform:scale(.9);opacity:.6}50%{transform:scale(1.15);opacity:1}}
+@keyframes lgpulse2{0%,100%{filter:drop-shadow(0 0 4px #4FC3F7)}50%{filter:drop-shadow(0 0 14px #4FC3F7)}}
+@keyframes lgscan{from{top:-2px}to{top:100%}}
+@keyframes lgin{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:none}}
+.js-logout[hidden]{display:none!important}
