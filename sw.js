@@ -25,9 +25,17 @@ self.addEventListener('fetch', e => {
       .catch(() => caches.match('data.json')));
     return;
   }
-  // resto: caché primero y se refresca en segundo plano
-  e.respondWith(caches.match(req).then(hit => {
-    const net = fetch(req).then(r => { const c = r.clone(); caches.open(VERSION).then(x => x.put(req, c)); return r; }).catch(() => hit);
-    return hit || net;
-  }));
+  // resto (la app): primero la red, para que siempre salga la versión más nueva; si no hay red o tarda más de 4 s, la copia guardada
+  e.respondWith((async () => {
+    const cache = await caches.open(VERSION);
+    try {
+      const r = await Promise.race([fetch(req), new Promise((_, no) => setTimeout(() => no(new Error('lento')), 4000))]);
+      if (r && r.ok) cache.put(req, r.clone());
+      return r;
+    } catch (err) {
+      const hit = await cache.match(req) || await caches.match(req);
+      if (hit) return hit;
+      throw err;
+    }
+  })());
 });

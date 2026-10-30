@@ -100,7 +100,7 @@ function setData(d, fuente) {
   searchCols = null; colFilters.clear(); sfCol = -1; pendFilter = false;
 
   const src = d.fuente === 'cloud' ? 'Google Sheet' : d.fuente === 'local' ? 'importada' : 'repositorio';
-  setInfo(`${d.rows.length.toLocaleString('es-ES')} cables, ${d.columns.length} columnas, ${src}`, d.generado ? `Actualizada ${d.generado}` : '');
+  setInfo(`${d.rows.length.toLocaleString('es-ES')} cables, ${d.columns.length} columnas, ${src}${d.generado ? ', ' + d.generado : ''}`, d.generado ? `Actualizada ${d.generado}` : '');
 
   // Columnas: se fija la selección inicial y se avisa de las que aparezcan después
   const names = d.columns.map(c => c.name);
@@ -1314,7 +1314,11 @@ async function pullTable(silent) {
     setData(d, 'cloud');
     if (!silent) toast(`Tabla actualizada: ${d.rows.length} cables`);
     return true;
-  } catch (e) { if (!silent) toast('No se pudo leer la hoja: ' + e.message, 5000); return false; }
+  } catch (e) {
+    if (!silent) toast('No se pudo leer la hoja: ' + e.message, 5000);
+    else if (!pullTable.warned) { pullTable.warned = true; setConn('warn', 'Sin conexión con Google'); toast('No se pudo actualizar la tabla (' + e.message + '). Se muestra la última guardada' + (DATA && DATA.generado ? ', del ' + DATA.generado : '') + '.', 6000); }
+    return false;
+  }
 }
 
 /* Fotos que solo existen en la nube: se descargan al necesitarlas */
