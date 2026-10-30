@@ -22,7 +22,7 @@ async function pullRoutes(silent) {
     const j = await apiGet('routes', RT.hash && RT.fuente === 'cloud' ? { hash: RT.hash } : {});
     if (j.none) { RT.err = 'Tu Sheet no tiene la pestaña CC_SCHEDULE con datos.'; return false; }
     if (j.same) { RT.fecha = new Date().toISOString(); if (RT.data) { RT.data.fecha = RT.fecha; await DB.put('meta', RT.data, 'routes'); } if (!silent) toast('Las rutas ya están al día'); return true; }
-    const r = { hash: j.hash, fecha: new Date().toISOString(), fuente: 'cloud', discs: j.discs, stats: j.stats, cables: j.cables, codes: j.codes, idx: j.idx };
+    const r = { hash: j.hash, fecha: new Date().toISOString(), fuente: 'cloud', discs: j.discs, stats: j.stats, levels: j.levels || [], cables: j.cables, codes: j.codes, idx: j.idx };
     await DB.put('meta', r, 'routes'); setRoutes(r);
     if (!silent) toast(`Rutas actualizadas: ${r.codes.length.toLocaleString('es-ES')} códigos`);
     return true;
@@ -32,26 +32,27 @@ async function pullRoutes(silent) {
 /* Sin Google: se leen del mismo Excel del CC_SCHEDULE (llamada desde importSchedule) */
 async function importRoutes(ws, ref, hr) {
   const find = n => { for (let c = ref.s.c; c <= ref.e.c; c++) { const x = ws[XLSX.utils.encode_cell({ r: hr, c })]; if (x && String(x.v).trim() === n) return c; } return -1; };
-  const hc = find('CABLE_NUMBER'), dc = find('Discipline'), sc = find('CURRENT_STATUS'), rc = find('ROUTE_CODES');
+  const hc = find('CABLE_NUMBER'), dc = find('Discipline'), sc = find('CURRENT_STATUS'), rc = find('ROUTE_CODES'), lc = find('Level');
   if (rc < 0) return false;
   const get = (r, c) => { const x = c < 0 ? null : ws[XLSX.utils.encode_cell({ r, c })]; return x ? String(x.v).replace(/ /g, ' ').trim() : ''; };
-  const discs = [], dm = new Map(), stats = [], sm = new Map(), cables = [], codes = [], idx = [], cm = new Map(), seen = new Set();
+  const discs = [], dm = new Map(), stats = [], sm = new Map(), levels = [], lm = new Map(), cables = [], codes = [], idx = [], cm = new Map(), seen = new Set();
   const pos = (arr, map, v) => { let i = map.get(v); if (i === undefined) { i = arr.length; map.set(v, i); arr.push(v); } return i; };
   for (let r = hr + 1; r <= ref.e.r; r++) {
     const t = get(r, hc); if (!t || seen.has(t)) continue; seen.add(t);
     const ci = cables.length;
-    cables.push([t, pos(discs, dm, get(r, dc).toUpperCase()), pos(stats, sm, get(r, sc))]);
+    cables.push([t, pos(discs, dm, get(r, dc).toUpperCase()), pos(stats, sm, get(r, sc)), pos(levels, lm, get(r, lc))]);
     for (const part of get(r, rc).split(',')) {
       const code = part.trim().replace(/^\/+/, '').trim(); if (!code) continue;
       const k = pos(codes, cm, code); (idx[k] = idx[k] || []);
       if (idx[k][idx[k].length - 1] !== ci) idx[k].push(ci);
     }
   }
-  const rr = { hash: 'local-' + cables.length, fecha: new Date().toISOString(), fuente: 'local', discs, stats, cables, codes, idx };
+  const rr = { hash: 'local-' + cables.length, fecha: new Date().toISOString(), fuente: 'local', discs, stats, levels, cables, codes, idx };
   await DB.put('meta', rr, 'routes'); setRoutes(rr);
   return true;
 }
 
+const lvOf = c => (RT.data.levels && c[3] !== undefined ? RT.data.levels[c[3]] : '') || '';
 const statCat = s => { s = String(s || '').toUpperCase(); return s === 'PULLED' ? '--v-good' : s === 'DAMAGED' ? '--v-bad' : s === 'SPARE' ? '--v-none' : '--v-warn'; };
 const STAT_ES = { PULLED: 'Tendido (Pulled)' };
 const fmtDate = iso => { try { return new Date(iso).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }); } catch { return ''; } };
@@ -131,12 +132,13 @@ function paintRouteDetail() {
       <span class="muted">${rows.length.toLocaleString('es-ES')} cables</span>
       <button class="btn" id="rtAdd">Añadir los ${rows.length.toLocaleString('es-ES')} a la lista</button>
       <button class="btn" id="rtCopy">Copiar tags</button>
+      <button class="btn primary" id="rtPdf">PDF</button>
     </div>
-    <div class="table-wrap"><table class="legend rt-table"><thead><tr><th>Tag</th><th>Disciplina</th><th>Status</th><th>Status en la tabla</th></tr></thead><tbody>
+    <div class="table-wrap"><table class="legend rt-table"><thead><tr><th>Tag</th><th>Disciplina</th><th>Level</th><th>Status</th><th>Status en la tabla</th></tr></thead><tbody>
       ${shown.map(c => {
         const ri = IDX.get(norm(c[0])), st = d.stats[c[2]], tb = ri !== undefined && STATI >= 0 ? DATA.rows[ri][STATI] : '';
-        return `<tr><td class="tagc">${esc(c[0])}</td><td>${esc(d.discs[c[1]] || '')}</td><td>${sw(statCat(st))}${esc(STAT_ES[String(st).toUpperCase()] || st || '')}</td><td>${esc(tb ? sentence(tb) : '')}</td></tr>`;
-      }).join('') || '<tr><td colspan="4" class="empty">Ningún cable con esos filtros.</td></tr>'}
+        return `<tr><td class="tagc">${esc(c[0])}</td><td>${esc(d.discs[c[1]] || '')}</td><td>${esc(lvOf(c))}</td><td>${sw(statCat(st))}${esc(STAT_ES[String(st).toUpperCase()] || st || '')}</td><td>${esc(tb ? sentence(tb) : '')}</td></tr>`;
+      }).join('') || '<tr><td colspan="5" class="empty">Ningún cable con esos filtros.</td></tr>'}
     </tbody></table></div>
     ${rows.length > shown.length ? `<button class="btn more" id="rtMoreRows">Mostrar más (${(rows.length - shown.length).toLocaleString('es-ES')} restantes)</button>` : ''}`;
 }
@@ -158,6 +160,7 @@ document.addEventListener('click', async e => {
   if (t.dataset.s !== undefined && t.closest('#rtStat')) { RT.stat = t.dataset.s; RT.limit = 300; paintRouteDetail(); return; }
   if (t.id === 'rtCopyCode') { try { await navigator.clipboard.writeText(RT.data.codes[RT.sel]); toast('Código copiado'); } catch { toast('No se pudo copiar'); } return; }
   if (t.id === 'rtCopy') { try { await navigator.clipboard.writeText(routeRows().map(c => c[0]).join('\n')); toast('Tags copiados'); } catch { toast('No se pudo copiar'); } return; }
+  if (t.id === 'rtPdf') { await routesPdf(); return; }
   if (t.id === 'rtAdd') {
     const have = new Set(scanList.map(x => norm(x.tag))), now = new Date().toISOString(); let add = 0;
     for (const c of routeRows()) { if (have.has(norm(c[0]))) continue; have.add(norm(c[0])); scanList.push({ tag: c[0], code: c[0], found: true, time: now, sched: true }); add++; }
@@ -167,3 +170,39 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('input', e => { if (e.target.id === 'rtQ') { RT.q = e.target.value; RT.cLimit = 150; paintCodes(); } });
 document.addEventListener('change', e => { if (e.target.id === 'rtHide') { RT.hideNon = e.target.checked; RT.cLimit = 150; paintCodes(); } });
+
+/* PDF con los cables de la bandeja o tránsito elegido (con los filtros de disciplina y status puestos) */
+async function routesPdf() {
+  const d = RT.data, rows = routeRows();
+  if (RT.sel < 0 || !rows.length) return toast('No hay cables que exportar');
+  const btn = $('#rtPdf'); btn.disabled = true;
+  try {
+    toast('Preparando el PDF', 8000);
+    if (!(window.jspdf && window.jspdf.jsPDF)) { await loadScript('vendor/jspdf.umd.min.js'); await loadScript('vendor/jspdf.plugin.autotable.min.js'); }
+    const code = d.codes[RT.sel], doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+    const filt = [RT.disc && 'Disciplina ' + RT.disc, RT.stat && 'Status ' + RT.stat].filter(Boolean).join(', ');
+    const byD = new Map(); rows.forEach(c => byD.set(d.discs[c[1]] || '(sin)', (byD.get(d.discs[c[1]] || '(sin)') || 0) + 1));
+    const resumen = [...byD].map(([k, n]) => `${k} ${n}`).join('   ');
+    const stampTxt = new Date().toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
+    doc.autoTable({
+      head: [['Tag', 'Disciplina', 'Level', 'Status (CURRENT_STATUS)', 'Status en la tabla']],
+      body: rows.map(c => { const ri = IDX.get(norm(c[0])); return [c[0], d.discs[c[1]] || '', lvOf(c), d.stats[c[2]] || '', ri !== undefined && STATI >= 0 ? sentence(DATA.rows[ri][STATI]) : '']; }),
+      startY: 27, margin: { top: 27, left: 8, right: 8, bottom: 12 },
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 1.5, lineColor: [140, 150, 160], lineWidth: 0.15, valign: 'middle' },
+      headStyles: { fillColor: [16, 32, 48], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [246, 248, 250] }, rowPageBreak: 'avoid',
+      didDrawPage: p => {
+        doc.setFontSize(14); doc.setTextColor(16, 32, 48); doc.text('Transit y bandejas', 8, 11);
+        doc.setFontSize(10); doc.text(code, 8, 17);
+        doc.setFontSize(8.5); doc.setTextColor(90, 100, 110);
+        doc.text(`${rows.length} cables${filt ? '  |  ' + filt : ''}  |  ${resumen}`, 8, 22.5);
+        doc.text(stampTxt, W - 8, 11, { align: 'right' });
+        doc.text(`Pagina ${p.pageNumber}`, W - 8, H - 5, { align: 'right' });
+      },
+    });
+    doc.save(`transit_${code.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')}_${stamp()}.pdf`);
+    toast('PDF descargado', 3000);
+  } catch (e) { toast('No se pudo crear el PDF: ' + e.message, 5000); }
+  finally { btn.disabled = false; }
+}

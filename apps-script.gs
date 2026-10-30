@@ -285,7 +285,7 @@ function getRoutes_(clientHash) {
   if (!sh || sh.getLastRow() < 2) return { ok: true, none: true };
   var lastCol = sh.getLastColumn();
   var head = sh.getRange(1, 1, Math.min(30, sh.getLastRow()), lastCol).getDisplayValues();
-  var hr = -1, hc = -1, dc = -1, sc = -1, rc = -1;
+  var hr = -1, hc = -1, dc = -1, sc = -1, rc = -1, lc = -1;
   for (var r = 0; r < head.length && hr < 0; r++) {
     for (var c = 0; c < lastCol; c++) { if (String(head[r][c]).trim() === 'CABLE_NUMBER') { hr = r; hc = c; break; } }
   }
@@ -295,20 +295,21 @@ function getRoutes_(clientHash) {
     if (h === 'Discipline' && dc < 0) dc = c2;
     if (h === 'CURRENT_STATUS' && sc < 0) sc = c2;
     if (h === 'ROUTE_CODES' && rc < 0) rc = c2;
+    if (h === 'Level' && lc < 0) lc = c2;
   }
   if (rc < 0) throw new Error('No encuentro la columna ROUTE_CODES en ' + HOJA_SCHEDULE);
   var n = sh.getLastRow() - hr - 1;
   if (n < 1) return { ok: true, none: true };
   var col = function (k) { return k >= 0 ? sh.getRange(hr + 2, k + 1, n, 1).getDisplayValues() : null; };
-  var tg = col(hc), ds = col(dc), st = col(sc), rt = col(rc);
-  var discs = [], dmap = {}, stats = [], smap = {}, cables = [], codes = [], idx = [], cmap = {}, seen = {};
+  var tg = col(hc), ds = col(dc), st = col(sc), rt = col(rc), lv = col(lc);
+  var discs = [], dmap = {}, stats = [], smap = {}, levels = [], lmap = {}, cables = [], codes = [], idx = [], cmap = {}, seen = {};
   var pos = function (arr, map, v) { if (!Object.prototype.hasOwnProperty.call(map, v)) { map[v] = arr.length; arr.push(v); } return map[v]; };
   for (var i = 0; i < n; i++) {
     var t = String(tg[i][0]).replace(/\u00a0/g, ' ').trim();
     if (!t || seen[t]) continue;
     seen[t] = 1;
     var ci = cables.length;
-    cables.push([t, pos(discs, dmap, ds ? String(ds[i][0]).trim().toUpperCase() : ''), pos(stats, smap, st ? String(st[i][0]).trim() : '')]);
+    cables.push([t, pos(discs, dmap, ds ? String(ds[i][0]).trim().toUpperCase() : ''), pos(stats, smap, st ? String(st[i][0]).trim() : ''), pos(levels, lmap, lv ? String(lv[i][0]).trim() : '')]);
     var parts = String(rt[i][0]).split(',');
     for (var k = 0; k < parts.length; k++) {
       var code = parts[k].replace(/\u00a0/g, ' ').trim().replace(/^\/+/, '').trim();
@@ -319,9 +320,9 @@ function getRoutes_(clientHash) {
       if (lst[lst.length - 1] !== ci) lst.push(ci);
     }
   }
-  var hash = md5_(JSON.stringify([discs, stats, cables, codes, idx]));
+  var hash = md5_(JSON.stringify([discs, stats, levels, cables, codes, idx]));
   if (clientHash && clientHash === hash) return { ok: true, same: true, hash: hash };
-  return { ok: true, hash: hash, discs: discs, stats: stats, cables: cables, codes: codes, idx: idx };
+  return { ok: true, hash: hash, discs: discs, stats: stats, levels: levels, cables: cables, codes: codes, idx: idx };
 }
 
 function getSync_(pdfHash) {
