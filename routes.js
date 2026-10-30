@@ -187,7 +187,7 @@ async function routesPdf() {
     const stampTxt = new Date().toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
     doc.autoTable({
       head: [['Tag', 'Disciplina', 'Level', 'Status (CURRENT_STATUS)', 'Status en la tabla']],
-      body: rows.map(c => { const ri = IDX.get(norm(c[0])); return [c[0], d.discs[c[1]] || '', lvOf(c), d.stats[c[2]] || '', ri !== undefined && STATI >= 0 ? sentence(DATA.rows[ri][STATI]) : '']; }),
+      body: [...rows].sort((a, b) => (d.discs[a[1]] || '').localeCompare(d.discs[b[1]] || '', 'es') || a[0].localeCompare(b[0], 'es', { numeric: true })).map(c => { const ri = IDX.get(norm(c[0])); return [c[0], d.discs[c[1]] || '', lvOf(c), d.stats[c[2]] || '', ri !== undefined && STATI >= 0 ? sentence(DATA.rows[ri][STATI]) : '']; }),
       startY: 27, margin: { top: 27, left: 8, right: 8, bottom: 12 },
       styles: { font: 'helvetica', fontSize: 8, cellPadding: 1.5, lineColor: [140, 150, 160], lineWidth: 0.15, valign: 'middle' },
       headStyles: { fillColor: [16, 32, 48], textColor: 255, fontStyle: 'bold' },
