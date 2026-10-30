@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0D2436">
 <meta name="color-scheme" content="light dark">
+<script>try{var t=JSON.parse(localStorage.getItem("theme")||"\"auto\"");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Cable Scan">
@@ -35,8 +36,11 @@
       <button class="snav" data-tab="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Buscar</span><kbd>/</kbd></button>
       <button class="snav" data-tab="list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Lista</span><b class="count" data-n="0">0</b></button>
       <button class="snav" data-tab="routes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16M8 4v6M15 9v6M10 14v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Transit</span></button>
+      <button class="snav" data-tab="library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Biblioteca</span></button>
       <button class="snav" data-tab="stats"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Resumen</span></button>
       <hr>
+      <button class="snav js-refresh" data-proxy="btnRefresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-4.5L4 9m0-5v5h5M4 13a8 8 0 0 0 14 4.5L20 15m0 5v-5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Actualizar</span><small id="lastUpd"></small><b class="pend-badge" hidden></b></button>
+      <button class="snav" data-proxy="btnTheme"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg><span class="js-themelbl">Tema</span></button>
       <button class="snav" data-proxy="btnCols"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 5h4v14h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Columnas</span></button>
       <button class="snav" data-proxy="btnSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Ajustes</span></button>
       <button class="snav" data-proxy="btnInstall" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0l-4-4m4 4l4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Instalar app</span></button>
@@ -62,6 +66,8 @@
       </div>
     </div>
     <div class="bar-actions">
+      <button class="tool js-refresh" id="btnRefresh" aria-label="Actualizar datos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-4.5L4 9m0-5v5h5M4 13a8 8 0 0 0 14 4.5L20 15m0 5v-5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Actualizar</span><b class="pend-badge" hidden></b></button>
+      <button class="tool" id="btnTheme" aria-label="Cambiar tema claro u oscuro"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg><span class="js-themelbl">Tema</span></button>
       <button class="tool" id="btnInstall" hidden aria-label="Instalar como app">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0l-4-4m4 4l4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Instalar</span>
@@ -95,6 +101,10 @@
         <button class="tab" role="tab" data-tab="routes">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16M8 4v6M15 9v6M10 14v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           <span>Transit</span>
+        </button>
+        <button class="tab" role="tab" data-tab="library">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          <span>Biblioteca</span>
         </button>
         <button class="tab" role="tab" data-tab="stats">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
@@ -156,6 +166,11 @@
         <!-- BUSCAR -->
         <section id="tab-search" class="panel" aria-label="Buscar">
           <h2 class="ptitle">Buscar <small id="resCount"></small></h2>
+          <div class="seg src-seg" id="srcSeg" role="group" aria-label="Dónde buscar">
+            <button class="segbtn active" data-src="table">Mi tabla CABLEADO</button>
+            <button class="segbtn" data-src="cc">Todo el proyecto</button>
+          </div>
+          <p class="help" id="srcInfo"></p>
           <label class="field">
             <span>Buscar texto</span>
             <input id="q" type="search" placeholder="Parte del tag, por ejemplo CKA32-BR03" autocomplete="off">
@@ -193,6 +208,12 @@
           <div id="routes"></div>
         </section>
 
+        <!-- BIBLIOTECA -->
+        <section id="tab-library" class="panel" aria-label="Biblioteca de PDF">
+          <h2 class="ptitle">Biblioteca <small id="lbInfo"></small></h2>
+          <div id="library"></div>
+        </section>
+
         <!-- RESUMEN -->
         <section id="tab-stats" class="panel" aria-label="Resumen de avance">
           <h2 class="ptitle">Resumen <small id="statsInfo"></small></h2>
@@ -214,6 +235,49 @@
       <div class="detail-body" id="vBody"></div>
     </section>
   </div>
+</div>
+
+<!-- ENTRAR CON CÓDIGO DE PERSONAL -->
+<div id="loginModal" class="overlay login" hidden>
+  <form class="login-box" id="loginForm" autocomplete="off">
+    <h2>Entrar</h2>
+    <p class="muted">Escribe tu código de personal para usar la app.</p>
+    <label class="field"><span>Código</span><input id="loginCode" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" spellcheck="false" required></label>
+    <p class="pin-err" id="loginErr" role="alert"></p>
+    <button class="btn primary" id="loginGo" type="submit">Entrar</button>
+  </form>
+</div>
+
+<!-- STATUS DE CAMPO -->
+<div id="fsModal" class="overlay modal" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Status de campo">
+    <div class="sheet-head"><h2>Status de campo</h2><button class="btn quiet" id="fsClose">Cerrar</button></div>
+    <form class="sheet-body fs-form" id="fsForm">
+      <p class="marker fs-tag"><span class="sleeve"></span><span class="mk-body"><b id="fsTag"></b></span></p>
+      <p class="chart-t">Status</p>
+      <div class="chips" id="fsTipo"><button type="button" class="filter" data-v="TENDIDO">Tendido</button><button type="button" class="filter" data-v="COIL">Coil</button></div>
+      <div id="fsCoil" hidden>
+        <label class="field"><span>Coil tendidos (m)</span><input id="fsMetros" type="number" inputmode="decimal" min="0" step="any"></label>
+        <label class="field"><span>Motivo de coil</span><textarea id="fsMotivo" placeholder="Por qué se deja en coil"></textarea></label>
+      </div>
+      <p class="chart-t">Miniruta from</p>
+      <div class="chips" id="fsFrom"><button type="button" class="filter" data-v="SI">SI</button><button type="button" class="filter" data-v="NO">NO</button><button type="button" class="filter" data-v="NA">NA</button></div>
+      <p class="chart-t">Miniruta to</p>
+      <div class="chips" id="fsTo"><button type="button" class="filter" data-v="SI">SI</button><button type="button" class="filter" data-v="NO">NO</button><button type="button" class="filter" data-v="NA">NA</button></div>
+      <p class="help">Se guarda como una nota del cable y la ve todo el equipo. No cambia las tablas.</p>
+    </form>
+    <div class="pdf-foot"><button class="btn primary" id="fsSave" disabled>Guardar status</button></div>
+  </div>
+</div>
+
+<!-- VISOR DE PDF (solo lectura) -->
+<div id="pvModal" class="overlay pv" hidden>
+  <div class="pv-bar">
+    <button class="btn quiet" id="pvClose">Cerrar</button>
+    <span class="pv-title" id="pvTitle"></span>
+    <span class="pv-tools"><button class="btn small" id="pvOut" aria-label="Alejar">−</button><button class="btn small" id="pvFit" title="Ajustar al ancho"><span id="pvZoom">100 %</span></button><button class="btn small" id="pvIn" aria-label="Acercar">+</button><span class="pv-page" id="pvPage"></span></span>
+  </div>
+  <div class="pv-body" id="pvBody"></div>
 </div>
 
 <!-- LISTA DE TRABAJO EN PDF -->
@@ -266,6 +330,7 @@
       <section>
         <h3>Conexión con Google</h3>
         <p class="muted" id="sInfo"></p>
+        <p class="muted" id="sUser"></p><button class="btn small" id="sLogout" hidden>Cambiar de persona</button>
         <label class="field"><span>URL de la aplicación web (termina en /exec)</span>
           <input id="sScriptUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
         <label class="field"><span>Clave</span>
@@ -348,5 +413,8 @@
 <script src="app.js"></script>
 <script src="stats.js"></script>
 <script src="routes.js"></script>
+<script src="cc.js"></script>
+<script src="viewer.js"></script>
+<script src="library.js"></script>
 </body>
 </html>

@@ -47,16 +47,24 @@ var HOJA_ARCHIVOS = 'ARCHIVOS';
 var HOJA_PDF = 'PDF_INDEX';
 var HOJA_SCHEDULE = 'CC_SCHEDULE';   // lista total de cables del proyecto
 var ESTADOS_EXCLUIDOS = ['DAMAGED', 'SPARE'];   // del CC_SCHEDULE (columna CURRENT_STATUS) no se cuentan
+var CC_COLUMNAS = ['Installer', 'CABLE_NUMBER', 'REVISION', 'Hold', 'Priority', 'From_Tag', 'From_Description', 'From_Room_Number', 'From_Area',
+  'To_Tag', 'To_Description', 'To_Room_Number', 'To_Area', 'Level', 'Cable_Routing', 'Cable_Routing_Produc', 'Real Length', 'Cable_Type', 'System',
+  'Comments', 'Design', 'Discipline', 'CURRENT_SUBCONTRACTOR', 'CURRENT_STATUS', 'Pulledby_date', 'Released_CT', 'Tag_From_To', 'Area_From-To',
+  'Room_From-To', 'Pasante', 'Locked'];   // columnas del CC_SCHEDULE que se llevan a la app para buscar cables de todo el proyecto
 var DISCIPLINA_FILTRO = 'INS';       // solo cuentan los cables con esta Discipline (INS = instrumentación). Vacío = todos
 var CARPETA_FOTOS = 'CableScan_Fotos';
 var CARPETA_PDF = 'CableScan_PDF';
+var CARPETA_ISO = 'CableScan_PDF_Isometrico_Bandeja';
+var CARPETA_TRANSIT = 'CableScan_PDF_Transit';
 var ADMIN_TOKEN = '';           // clave SOLO TUYA para subir y quitar PDF desde la app. Vacía = esa función está desactivada.
 var PDF_FOLDER_ID = '';          // opcional: ID de una carpeta de Drive que ya tengas con los PDF
 var MAX_PDF_BYTES = 30 * 1024 * 1024;
 
-var H_NOTAS = ['id', 'tag', 'nota', 'fecha', 'autor'];
+var H_NOTAS = ['id', 'tag', 'nota', 'fecha', 'autor', 'estado'];
+var HOJA_PERSONAL = 'PERSONAL';
+var H_PERSONAL = ['codigo', 'nombre', 'cargo', 'activo', 'editar_notas'];
 var H_ARCH = ['uid', 'archivo_id', 'tag', 'tipo', 'nombre', 'mime', 'fecha', 'autor'];
-var H_PDF = ['id', 'nombre', 'modificado'];
+var H_PDF = ['id', 'nombre', 'modificado', 'tipo', 'carpeta'];
 var ERRORES = { '#REF!': 1, '#N/A': 1, '#VALUE!': 1, '#DIV/0!': 1, '#NAME?': 1, '#NUM!': 1, '#NULL!': 1 };
 
 function doGet(e) { return handle_((e && e.parameter) || {}); }
@@ -76,12 +84,24 @@ function handle_(p) {
   try {
     if (TOKEN.indexOf('CAMBIA-ESTA') === 0) return out_({ ok: false, error: 'Falta cambiar la clave TOKEN en el script' });
     if (!p.token || p.token !== TOKEN) return out_({ ok: false, error: 'Clave incorrecta' });
+    var list = personal_(), me = null;
+    if (p.action !== 'ping' && list.length) {
+      me = findPerson_(list, p.user);
+      if (!me || !me.activo) return out_({ ok: false, login: true, error: 'Código de personal no válido o desactivado' });
+    }
+    var canEdit = !list.length || isAdmin_(p) || !!(me && me.notas);
+    if (/^(addNote|delNote|upload|delFile)$/.test(p.action)) {
+      if (!canEdit) throw new Error('Tu código no tiene permiso para editar notas, fotos ni status');
+      if (me) p.author = me.nombre;
+    }
     switch (p.action) {
+      case 'login': return out_({ ok: true, open: !list.length, nombre: me ? me.nombre : '', cargo: me ? me.cargo : '', notas: canEdit });
       case 'ping': return out_({ ok: true, admin: isAdmin_(p) });
       case 'data': return out_(getData_(p.hash));
-      case 'sync': return out_(getSync_(p.pdfHash));
+      case 'sync': return out_(getSync_(p.pdfHash, { nombre: me ? me.nombre : '', notas: canEdit }));
       case 'schedule': return out_(getSchedule_(p.hash));
       case 'routes': return out_(getRoutes_(p.hash));
+      case 'ccdata': return out_(getCC_(p.hash));
       case 'file': return out_(getFile_(p.uid));
       case 'pdf': return out_(getPdf_(p.id));
       case 'uploadPdf': case 'delPdf':
@@ -95,6 +115,22 @@ function handle_(p) {
   } catch (err) {
     return out_({ ok: false, error: String((err && err.message) || err) });
   }
+}
+
+/* ---------- personal (pestaña PERSONAL: codigo, nombre, cargo, activo SI/NO, editar_notas SI/NO) ---------- */
+function yes_(v) { var x = String(v).trim().toUpperCase(); return x === 'SI' || x === 'SÍ' || x === 'S' || x === 'TRUE' || x === '1' || x === 'X'; }
+function personal_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HOJA_PERSONAL);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return rows_(sh).filter(function (r) { return String(r[0]).trim(); }).map(function (r) {
+    return { codigo: String(r[0]).trim().toUpperCase(), nombre: String(r[1]).trim(), cargo: String(r[2] || '').trim(), activo: yes_(r[3]), notas: yes_(r[4]) };
+  });
+}
+function findPerson_(list, code) {
+  var c = String(code || '').trim().toUpperCase();
+  if (!c) return null;
+  for (var i = 0; i < list.length; i++) if (list[i].codigo === c) return list[i];
+  return null;
 }
 
 /* ---------- utilidades ---------- */
@@ -145,6 +181,8 @@ function namedFolder_(propKey, name) {
   return f;
 }
 function fotosFolder_() { return namedFolder_('FOLDER_FOTOS', CARPETA_FOTOS); }
+function isoFolder_() { return namedFolder_('FOLDER_ISO', CARPETA_ISO); }
+function transitFolder_() { return namedFolder_('FOLDER_TRANSIT', CARPETA_TRANSIT); }
 function pdfFolder_() { return PDF_FOLDER_ID ? DriveApp.getFolderById(PDF_FOLDER_ID) : namedFolder_('FOLDER_PDF', CARPETA_PDF); }
 
 /** Ejecútala una vez desde el editor: concede permisos, crea pestañas y carpetas e indexa los PDF. */
@@ -152,8 +190,13 @@ function autorizar() {
   sheet_(HOJA_NOTAS, H_NOTAS);
   sheet_(HOJA_ARCHIVOS, H_ARCH);
   sheet_(HOJA_PDF, H_PDF);
+  sheet_(HOJA_PERSONAL, H_PERSONAL);
+  var shn = sheet_(HOJA_NOTAS, H_NOTAS);
+  shn.getRange(1, 1, 1, H_NOTAS.length).setValues([H_NOTAS]);
   fotosFolder_();
   pdfFolder_();
+  isoFolder_();
+  transitFolder_();
   indexarPdf();
   Logger.log('Listo. Ya puedes implementar como aplicación web.');
 }
@@ -161,16 +204,20 @@ function autorizar() {
 /* ---------- índice de PDF (lo mantienes tú desde Drive) ---------- */
 function indexarPdf() {
   var out = [];
-  (function walk(folder) {
+  function walk(folder, tipo, path) {
     var files = folder.getFilesByType(MimeType.PDF);
     while (files.hasNext()) {
       var f = files.next();
-      out.push([f.getId(), f.getName(), Utilities.formatDate(f.getLastUpdated(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm')]);
+      out.push([f.getId(), f.getName(), Utilities.formatDate(f.getLastUpdated(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'), tipo, path]);
     }
     var subs = folder.getFolders();
-    while (subs.hasNext()) walk(subs.next());
-  })(pdfFolder_());
+    while (subs.hasNext()) { var sf = subs.next(); walk(sf, tipo, path ? path + ' / ' + sf.getName() : sf.getName()); }
+  }
+  walk(pdfFolder_(), 'pulling', '');
+  walk(isoFolder_(), 'iso', '');
+  walk(transitFolder_(), 'transit', '');
   var sh = sheet_(HOJA_PDF, H_PDF);
+  sh.getRange(1, 1, 1, H_PDF.length).setValues([H_PDF]);
   if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, H_PDF.length).clearContent();
   if (out.length) sh.getRange(2, 1, out.length, H_PDF.length).setValues(out);
   return out.length;
@@ -325,18 +372,56 @@ function getRoutes_(clientHash) {
   return { ok: true, hash: hash, discs: discs, stats: stats, levels: levels, cables: cables, codes: codes, idx: idx };
 }
 
-function getSync_(pdfHash) {
+/* Búsqueda en todo el proyecto: las columnas de CC_COLUMNAS de todos los cables del CC_SCHEDULE, comprimidas por diccionario */
+function getCC_(clientHash) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HOJA_SCHEDULE);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, none: true };
+  var lastCol = sh.getLastColumn();
+  var head = sh.getRange(1, 1, Math.min(30, sh.getLastRow()), lastCol).getDisplayValues();
+  var hr = -1, hc = -1;
+  for (var r = 0; r < head.length && hr < 0; r++) {
+    for (var c = 0; c < lastCol; c++) { if (String(head[r][c]).trim() === 'CABLE_NUMBER') { hr = r; hc = c; break; } }
+  }
+  if (hr < 0) throw new Error('No encuentro la columna CABLE_NUMBER en las primeras filas de ' + HOJA_SCHEDULE);
+  var pick = [];
+  CC_COLUMNAS.forEach(function (name) {
+    for (var k = 0; k < lastCol; k++) { if (String(head[hr][k]).trim() === name) { pick.push({ name: name, i: k }); break; } }
+  });
+  var n = sh.getLastRow() - hr - 1;
+  if (n < 1) return { ok: true, none: true };
+  var all = sh.getRange(hr + 2, 1, n, lastCol).getDisplayValues();
+  var tagCol = -1; pick.forEach(function (p, j) { if (p.name === 'CABLE_NUMBER') tagCol = j; });
+  var dict = pick.map(function () { return []; }), maps = pick.map(function () { return {}; }), data = pick.map(function () { return []; });
+  var seen = {}, total = 0;
+  for (var i = 0; i < all.length; i++) {
+    var tag = String(all[i][hc]).replace(/\u00a0/g, ' ').trim();
+    if (!tag || seen[tag]) continue;
+    seen[tag] = 1; total++;
+    for (var j = 0; j < pick.length; j++) {
+      var v = String(all[i][pick[j].i]).replace(/\u00a0/g, ' ').trim();
+      var m = maps[j];
+      if (!Object.prototype.hasOwnProperty.call(m, v)) { m[v] = dict[j].length; dict[j].push(v); }
+      data[j].push(m[v]);
+    }
+  }
+  var cols = pick.map(function (p) { return p.name; });
+  var hash = md5_(JSON.stringify([cols, dict, data]));
+  if (clientHash && clientHash === hash) return { ok: true, same: true, hash: hash };
+  return { ok: true, hash: hash, total: total, cols: cols, dict: dict, data: data };
+}
+
+function getSync_(pdfHash, me) {
   var notes = rows_(sheet_(HOJA_NOTAS, H_NOTAS)).filter(function (r) { return r[0]; }).map(function (r) {
-    return { id: String(r[0]), tag: String(r[1]), text: String(r[2]), date: String(r[3]), author: String(r[4]) };
+    return { id: String(r[0]), tag: String(r[1]), text: String(r[2]), date: String(r[3]), author: String(r[4]), estado: String(r[5] || '') };
   });
   var files = rows_(sheet_(HOJA_ARCHIVOS, H_ARCH)).filter(function (r) { return r[0]; }).map(function (r) {
     return { uid: String(r[0]), tag: String(r[2]), kind: String(r[3]), name: String(r[4]), mime: String(r[5]), date: String(r[6]), author: String(r[7]) };
   });
   var pdfs = rows_(sheet_(HOJA_PDF, H_PDF)).filter(function (r) { return r[0]; }).map(function (r) {
-    return { id: String(r[0]), name: String(r[1]), date: String(r[2]) };
+    return { id: String(r[0]), name: String(r[1]), date: String(r[2]), tipo: String(r[3] || 'pulling'), carpeta: String(r[4] || '') };
   });
   var ph = md5_(JSON.stringify(pdfs));
-  var res = { ok: true, notes: notes, files: files, pdfHash: ph };
+  var res = { ok: true, notes: notes, files: files, pdfHash: ph, me: me };
   if (pdfHash && pdfHash === ph) res.pdfSame = true; else res.pdfs = pdfs;
   return res;
 }
@@ -367,7 +452,7 @@ function write_(p) {
       if (!p.id || !p.tag) throw new Error('Faltan datos de la nota');
       sh = sheet_(HOJA_NOTAS, H_NOTAS);
       if (!findRow_(sh, p.id)) {
-        sh.appendRow([String(p.id), String(p.tag), String(p.text || ''), String(p.date || ''), String(p.author || '')]);
+        sh.appendRow([String(p.id), String(p.tag), String(p.text || ''), String(p.date || ''), String(p.author || ''), p.estado ? JSON.stringify(p.estado) : '']);
       }
       return { ok: true };
 
@@ -391,13 +476,25 @@ function write_(p) {
       return { ok: true, id: file.getId() };
 
     case 'uploadPdf':
-      if (!p.tag || !p.data) throw new Error('Faltan datos del PDF');
+      if (!p.data) throw new Error('Faltan datos del PDF');
       var bytes = Utilities.base64Decode(p.data);
       if (bytes.length > MAX_PDF_BYTES) throw new Error('El PDF pesa más de 30 MB');
-      // el nombre debe contener el tag completo para que la app lo asocie al cable
       var base = String(p.name || '').replace(/\.pdf$/i, '').replace(/[\/\\]+/g, '-').trim();
-      var pname = (base.toUpperCase().replace(/\s+/g, '').indexOf(String(p.tag).toUpperCase().replace(/\s+/g, '')) >= 0 ? base : (String(p.tag) + (base ? ' ' + base : ''))) + '.pdf';
-      var pfile = pdfFolder_().createFile(Utilities.newBlob(bytes, 'application/pdf', pname));
+      var ptipo = p.tipo === 'iso' ? 'iso' : (p.tipo === 'transit' ? 'transit' : 'pulling');
+      var pname, dest;
+      if (ptipo === 'pulling') {
+        if (!p.tag) throw new Error('Falta el tag del cable');
+        // el nombre debe contener el tag completo para que la app lo asocie al cable
+        pname = (base.toUpperCase().replace(/\s+/g, '').indexOf(String(p.tag).toUpperCase().replace(/\s+/g, '')) >= 0 ? base : (String(p.tag) + (base ? ' ' + base : ''))) + '.pdf';
+        dest = pdfFolder_();
+      } else {
+        if (!base) throw new Error('Falta el nombre del PDF');
+        pname = base + '.pdf';
+        dest = ptipo === 'iso' ? isoFolder_() : transitFolder_();
+        var cf = String(p.carpeta || '').replace(/[\/\\]+/g, '-').trim();
+        if (cf) { var it = dest.getFoldersByName(cf); dest = it.hasNext() ? it.next() : dest.createFolder(cf); }
+      }
+      var pfile = dest.createFile(Utilities.newBlob(bytes, 'application/pdf', pname));
       indexarPdf();
       return { ok: true, id: pfile.getId(), name: pname };
 

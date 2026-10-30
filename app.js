@@ -283,6 +283,7 @@ function handleCode(code) {
   if (rows.length === 1 && rows[0] === current && $('#view').classList.contains('open')) return;   // la cámara sigue viendo el mismo cable
   if (rows.length === 1) { beep(true); camFlash('ok'); openCable(rows[0], true); }
   else if (rows.length > 1) { beep(true); setTab('search'); $('#q').value = code; searchLimit = 60; renderSearch(); }
+  else if (typeof ccFind === 'function' && ccFind(code) >= 0) { beep(true); camFlash('ok'); setTab('search'); setPend(false); setSrc('cc'); paintSrcSeg(); buildChips(); paintSF(); renderSearch(); openSched(ccFind(code), CCD.src); }
   else { beep(false); showLast('missing', code, 'No está en la tabla. Revisa el código o busca una parte del tag.'); }
 }
 
@@ -476,6 +477,7 @@ function setTab(name) {
   if (DATA) { if (name === 'search') renderSearch(); if (name === 'list') renderList(); }
   if (name === 'stats' && typeof renderStats === 'function') renderStats();
   if (name === 'routes' && typeof renderRoutes === 'function') renderRoutes();
+  if (name === 'library' && typeof renderLibrary === 'function') renderLibrary();
 }
 $$('.tab,.snav[data-tab]').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
 $$('.snav[data-proxy]').forEach(b => b.addEventListener('click', () => $('#' + b.dataset.proxy).click()));
@@ -485,10 +487,29 @@ setTab($('#app').dataset.tab);
 let statusFilter = '';
 /* Fuente de la búsqueda: la tabla CABLEADO, o los datos del CC_SCHEDULE cuando se abre "Pending por tender" */
 let pendFilter = false;   // PENDING + Released_CT = Y, con los datos del CC_SCHEDULE
-const SRC = () => (pendFilter && SC.pendData) ? SC.pendData : { columns: DATA.columns, rows: DATA.rows, tagi: TAGI, stati: STATI };
+let srcMode = LS.get('srcMode', 'table');   // 'table' = mi tabla CABLEADO; 'cc' = CC_SCHEDULE completo (todo el proyecto)
+const SRC = () => (pendFilter && SC.pendData) ? SC.pendData : (srcMode === 'cc' && typeof CCD !== 'undefined' && CCD.src) ? CCD.src : { columns: DATA.columns, rows: DATA.rows, tagi: TAGI, stati: STATI };
+function setSrc(m) {   // las columnas son otras: se limpian los filtros
+  if (srcMode === m) return;
+  srcMode = m; LS.set('srcMode', m); searchCols = null; colFilters.clear(); sfCol = -1; statusFilter = ''; sfMode = '';
+}
+function paintSrcSeg() {
+  $$('#srcSeg .segbtn').forEach(b => b.classList.toggle('active', b.dataset.src === srcMode));
+  const el = $('#srcInfo'); if (!el) return;
+  if (srcMode !== 'cc') { el.textContent = ''; return; }
+  if (typeof CCD !== 'undefined' && CCD.loading) el.textContent = 'Descargando la tabla de todo el proyecto. Puede tardar un poco la primera vez.';
+  else if (typeof CCD !== 'undefined' && CCD.src) el.textContent = `${CCD.src.rows.length.toLocaleString('es-ES')} cables de todas las disciplinas, guardados en este dispositivo (funciona sin cobertura). Datos del ${new Date(CCD.data.fecha).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}.`;
+  else el.textContent = cloud.on() ? 'Todavía no se ha descargado. Se baja una sola vez y luego funciona sin cobertura.' : 'Conecta tu Google para descargar la tabla de todo el proyecto.';
+}
+$('#srcSeg').addEventListener('click', async e => {
+  const b = e.target.closest('[data-src]'); if (!b) return;
+  setPend(false); setSrc(b.dataset.src); searchLimit = 60;
+  if (srcMode === 'cc' && !CCD.src && cloud.on() && !CCD.loading) { paintSrcSeg(); pullCC(false); }
+  buildChips(); paintSrcSeg(); paintSF(); renderSearch();
+});
 function buildChips() {
   const el = $('#statusChips'), S = SRC();
-  if (S.stati < 0 || S.sched) { el.innerHTML = ''; return; }
+  if (S.stati < 0 || (S.sched && !S.cc)) { el.innerHTML = ''; return; }
   const cnt = {};
   S.rows.forEach(r => { const s = r[S.stati] || '(sin status)'; cnt[s] = (cnt[s] || 0) + 1; });
   const items = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
@@ -610,7 +631,7 @@ function renderSearch() {
   const hits = [];
   for (let i = 0; i < S.rows.length; i++) {
     const r = S.rows[i];
-    if (S.stati >= 0 && !S.sched && statusFilter && (r[S.stati] || '(sin status)') !== statusFilter) continue;
+    if (S.stati >= 0 && (!S.sched || S.cc) && statusFilter && (r[S.stati] || '(sin status)') !== statusFilter) continue;
     if (q && !sc.some(c => norm(r[c]).includes(q))) continue;
     let ok = true;
     for (const [c, set] of colFilters) if (!set.has(cellVal(r, c))) { ok = false; break; }
@@ -627,9 +648,10 @@ function renderSearch() {
     const r = S.rows[i];
     if (S.sched) {
       const ci = n => S.columns.findIndex(c => c.name === n), f = ci('From_Tag'), tt = ci('To_Tag'), ins = ci('Installer');
-      const sub = [f >= 0 && tt >= 0 && (r[f] || r[tt]) ? `${r[f] || '?'} → ${r[tt] || '?'}` : '', ins >= 0 ? r[ins] : ''].filter(Boolean).join(' · ');
-      return `<button class="row st-warn ${i === curSched ? 'sel' : ''}" data-i="${i}" data-sched="1"><span class="t">${esc(r[S.tagi])}</span>
-        <span class="m"><span class="s">Pending por tender</span>${sub ? `<span>${esc(sub)}</span>` : ''}</span></button>`;
+      const sub = [f >= 0 && tt >= 0 && (r[f] || r[tt]) ? `${String(r[f] || '?').replace(/^#HKF\./, '')} → ${String(r[tt] || '?').replace(/^#HKF\./, '')}` : '', !S.cc && ins >= 0 ? r[ins] : ''].filter(Boolean).join(' · ');
+      const di = ci('Discipline'), stt = S.cc && S.stati >= 0 ? r[S.stati] : '';
+      return `<button class="row ${S.cc ? statusClass(stt === 'Pulled' ? 'TENDIDO' : stt) : 'st-warn'} ${i === curSched ? 'sel' : ''}" data-i="${i}" data-sched="1"><span class="t">${esc(r[S.tagi])}</span>
+        <span class="m"><span class="s">${S.cc ? esc((di >= 0 ? r[di] + ' · ' : '') + (stt || 'Sin status')) : 'Pending por tender'}</span>${sub ? `<span>${esc(sub)}</span>` : ''}</span></button>`;
     }
     const st = STATI >= 0 ? r[STATI] : '', f = flags.get(r[TAGI]);
     const bits = [];
@@ -646,7 +668,7 @@ function renderSearch() {
 $('#results').addEventListener('click', e => {
   if (e.target.id === 'btnMore') { searchLimit += 100; renderSearch(); return; }
   const it = e.target.closest('.row'); if (!it) return;
-  if (it.dataset.sched) openSched(+it.dataset.i); else openCable(+it.dataset.i, true);
+  if (it.dataset.sched) openSched(+it.dataset.i, SRC()); else openCable(+it.dataset.i, true);
 });
 /* todos los cables que salen con el filtro puesto, a la lista (Lista y PDF de trabajo) */
 $('#btnAddAll').addEventListener('click', () => {
@@ -679,7 +701,7 @@ function hasTag(key, t) {
 function pdfsFor(tag) {
   if (!PDFS.length) return [];
   const t = norm(tag), t2 = t.replace(/^#?HKF\./, '');
-  return PDFS.filter(p => hasTag(p.key, t) || (t2 !== t && hasTag(p.key, t2)));
+  return PDFS.filter(p => (p.tipo || 'pulling') === 'pulling' && (hasTag(p.key, t) || (t2 !== t && hasTag(p.key, t2))));
 }
 const setPdfs = (list, hash) => {
   // los espacios se conservan: marcan dónde termina el tag dentro del nombre del archivo
@@ -705,6 +727,10 @@ async function refreshFlags() {
   const get = t => flags.get(t) || (flags.set(t, { notes: 0, photos: 0 }), flags.get(t));
   n.forEach(x => get(x.tag).notes++);
   f.filter(x => x.kind === 'photo').forEach(x => get(x.tag).photos++);
+  paintPending(n.filter(x => !x.synced).length + f.filter(x => !x.synced && !x.localOnly && x.kind === 'photo').length);
+}
+function paintPending(n) {
+  $$('.pend-badge').forEach(b => { b.hidden = !n; b.textContent = n; b.title = n + ' pendientes de subir'; });
 }
 
 function renderEmpty() {
@@ -725,8 +751,9 @@ function openCable(i, animate) {
 }
 
 /* ficha de un cable "Pending por tender": todos sus datos tal como están en el CC_SCHEDULE */
-function openSched(i) {
-  current = -1; curSched = i;
+let schedSrc = null;   // conjunto de datos de la ficha abierta del CC_SCHEDULE (pendientes o todo el proyecto)
+function openSched(i, src) {
+  schedSrc = src || SC.pendData; current = -1; curSched = i;
   $('#view').classList.add('open'); $('#vAddList').hidden = false;
   cam.paused = !isWide();
   if (!isWide() && !(history.state && history.state.detail)) history.pushState({ detail: 1 }, '');
@@ -735,7 +762,7 @@ function openSched(i) {
   $$(`.row[data-sched][data-i="${i}"]`).forEach(r => r.classList.add('sel'));
 }
 function renderSched() {
-  const P = SC.pendData; if (!P || curSched < 0 || !P.rows[curSched]) return;
+  const P = schedSrc; if (!P || curSched < 0 || !P.rows[curSched]) return;
   const r = P.rows[curSched], tag = r[P.tagi], hide = LS.get('hideEmpty', false);
   const kv = P.columns.map((c, k) => {
     const v = r[k]; if (hide && !v) return '';
@@ -745,7 +772,7 @@ function renderSched() {
   $('#vBody').innerHTML = `
     <div class="d-top">
       <div class="marker"><span class="sleeve"></span><span class="mk-body"><b>${esc(tag)}</b></span><button class="btn small quiet copy" id="btnCopyTag">Copiar</button></div>
-      <div class="d-status st-warn"><i></i><div><b>Pending por tender</b><small>Datos del CC_SCHEDULE</small></div></div>
+      <div class="d-status ${P.cc ? statusClass(P.stati >= 0 && r[P.stati] === 'Pulled' ? 'TENDIDO' : 'PENDING') : 'st-warn'}"><i></i><div><b>${P.cc ? esc((P.stati >= 0 && r[P.stati]) || 'Sin status') : 'Pending por tender'}</b><small>Datos del CC_SCHEDULE${P.cc ? ', todo el proyecto' : ''}</small></div></div>
     </div>
     <label class="opt"><input type="checkbox" id="hideEmpty" ${hide ? 'checked' : ''}> Ocultar las columnas sin dato</label>
     <div class="kvs">${kv}</div>
@@ -780,7 +807,7 @@ async function renderCable(animate) {
   const drivePdfs = pdfsFor(tag);
   const legacy = files.filter(f => f.kind === 'pdf');
   const photos = files.filter(f => f.kind === 'photo');
-  const adm = cloud.admin();
+  const adm = cloud.admin(), canEd = canEditNotes();
   const pdfRows = drivePdfs.map(p => `<div class="item"><span class="nm">${esc(p.name)}<small>Actualizado ${esc(p.date)}</small></span><span class="go"><button class="btn small" data-pdf="${esc(p.id)}">Abrir</button>${adm ? `<button class="btn small danger" data-delpdf="${esc(p.id)}">Quitar</button>` : ''}</span></div>`).join('')
     + legacy.map(f => `<div class="item"><span class="nm">${esc(f.name)}${syncMark(f)}</span><span class="go"><button class="btn small" data-open="${f.id}">Abrir</button></span></div>`).join('');
   const pdfEmpty = !cloud.on() && !PDFS.length ? 'Conecta tu Google en Ajustes para ver los PDF de pulling.' : 'Todavía no hay PDF de pulling para este cable.';
@@ -791,6 +818,7 @@ async function renderCable(animate) {
       <div class="marker ${animate ? 'pop' : ''}"><span class="sleeve"></span><span class="mk-body"><b>${esc(tag)}</b></span><button class="btn small quiet copy" id="btnCopyTag">Copiar</button></div>
       <div class="d-status ${statusClass(st)}"><i></i><div><b>${esc(st ? sentence(st) : 'Sin status')}</b>${stDate ? `<small>Desde ${esc(fmtVal(stDate))}</small>` : ''}</div></div>
     </div>
+    ${fieldStatusCard(notes, canEd)}
 
     <label class="opt"><input type="checkbox" id="hideEmpty" ${hideEmpty ? 'checked' : ''}> Ocultar las columnas sin dato</label>
     <div class="kvs">${kv || '<p class="empty">No hay columnas elegidas. Pulsa Columnas para elegirlas.</p>'}</div>
@@ -803,13 +831,12 @@ async function renderCable(animate) {
         </div>
         <div class="sec" style="margin-top:28px"><h3>Fotos</h3>
           ${photos.length ? `<div class="photos">${photos.map(f => `<img data-photo="${f.id}" alt="${esc(f.name)}" ${f.blob ? `src="${URL.createObjectURL(f.blob)}"` : `src="${PIX}" data-lazy="1"`}>`).join('')}</div>` : '<p class="empty">Todavía no hay fotos de este cable.</p>'}
-          <div class="btn-row"><button class="btn primary" id="addPhoto">Hacer foto</button><button class="btn" id="addPhotoGal">Elegir de la galería</button></div>
+          ${canEd ? '<div class="btn-row"><button class="btn primary" id="addPhoto">Hacer foto</button><button class="btn" id="addPhotoGal">Elegir de la galería</button></div>' : ''}
         </div>
       </div>
       <div class="sec"><h3>Notas</h3>
-        <label class="field" style="margin-top:6px"><span>Nueva nota</span><textarea id="noteText" placeholder="Qué has visto o qué falta"></textarea></label>
-        <div class="btn-row"><button class="btn primary" id="saveNote">Guardar nota</button></div>
-        ${notes.map(n => `<div class="note"><div class="by"><span>${esc(new Date(n.date).toLocaleString('es-ES'))}${n.author ? ', ' + esc(n.author) : ''} ${syncMark(n)}</span><button class="btn small danger" data-deln="${n.id}">Borrar</button></div><p>${esc(n.text)}</p></div>`).join('')}
+        ${canEd ? '<label class="field" style="margin-top:6px"><span>Nueva nota</span><textarea id="noteText" placeholder="Qué has visto o qué falta"></textarea></label><div class="btn-row"><button class="btn primary" id="saveNote">Guardar nota</button></div>' : '<p class="empty">Tu código no tiene permiso para añadir notas, fotos ni status. Puedes leer lo que hay.</p>'}
+        ${notes.map(n => `<div class="note ${n.estado ? 'st ' + (n.estado.tipo === 'COIL' ? 'coil' : '') : ''}"><div class="by"><span>${esc(new Date(n.date).toLocaleString('es-ES'))}${n.author ? ', ' + esc(n.author) : ''} ${syncMark(n)}</span>${canEd ? `<button class="btn small danger" data-deln="${n.id}">Borrar</button>` : ''}</div><p>${n.estado ? `<span class="fs-pill ${n.estado.tipo === 'COIL' ? 'coil' : ''}">${esc(n.estado.tipo)}</span>` : ''}${esc(n.estado ? n.text.replace(/^(TENDIDO|COIL) · /, '') : n.text)}</p></div>`).join('')}
       </div>
     </div>`;
 
@@ -823,15 +850,16 @@ async function renderCable(animate) {
 
 $('#vBody').addEventListener('click', async e => {
   const t = e.target.closest('button,img');
-  if (t && current < 0 && curSched >= 0 && SC.pendData) {
-    const tg = SC.pendData.rows[curSched][SC.pendData.tagi];
+  if (t && current < 0 && curSched >= 0 && schedSrc) {
+    const tg = schedSrc.rows[curSched][schedSrc.tagi];
     if (t.id === 'btnCopyTag') { try { await navigator.clipboard.writeText(tg); toast('Tag copiado'); } catch { toast('No se pudo copiar el tag'); } }
     else if (t.id === 'openTbl') openCable(IDX.get(norm(tg)), true);
     return;
   }
   if (!t || current < 0) return;
   const tag = DATA.rows[current][TAGI];
-  if (t.id === 'addPhoto') $('#filePhoto').click();
+  if (t.id === 'btnFieldSt') openFieldStatus(tag);
+  else if (t.id === 'addPhoto') $('#filePhoto').click();
   else if (t.id === 'addPhotoGal') $('#filePhotoGal').click();
   else if (t.id === 'addPdf') $('#filePdf').click();
   else if (t.dataset.delpdf) {
@@ -844,7 +872,7 @@ $('#vBody').addEventListener('click', async e => {
     const text = $('#noteText').value.trim();
     if (!text) return toast('Escribe algo en la nota antes de guardarla');
     await DB.put('notes', { uid: newUid(), tag, text, date: new Date().toISOString(), author: cloud.author(), synced: false });
-    await refreshFlags(); await renderCable(); toast('Nota guardada');
+    await refreshFlags(); await renderCable(); toast('Nota guardada' + offlineNote());
     syncCloud(true);
   } else if (t.dataset.deln) {
     if (!confirm('¿Borrar esta nota? Se borrará también para el resto del equipo.')) return;
@@ -852,22 +880,10 @@ $('#vBody').addEventListener('click', async e => {
     if (n.synced && !(await cloudDelete('delNote', { id: n.uid }))) return;
     await DB.del('notes', n.id); await refreshFlags(); await renderCable();
   } else if (t.dataset.pdf) {
-    const p = PDFS.find(x => x.id === t.dataset.pdf);
-    const w = window.open('', '_blank');   // se abre ya, antes de descargar, para que el navegador no lo bloquee
-    try {
-      toast('Abriendo el PDF');
-      const b = await ensurePdf(p);
-      const url = URL.createObjectURL(b);
-      if (w) w.location = url; else location.href = url;
-    } catch (err) { if (w) w.close(); toast('No se pudo abrir el PDF: ' + err.message, 5000); }
+    openPdfItem(PDFS.find(x => x.id === t.dataset.pdf));
   } else if (t.dataset.open) {
-    const w = window.open('', '_blank');
-    try {
-      const f = await DB.get('files', +t.dataset.open);
-      const b = await ensureBlob(f);
-      const url = URL.createObjectURL(new Blob([b], { type: 'application/pdf' }));
-      if (w) w.location = url; else location.href = url;
-    } catch (err) { if (w) w.close(); toast('No se pudo abrir el PDF: ' + err.message, 4500); }
+    try { const f = await DB.get('files', +t.dataset.open); const b = await ensureBlob(f); await openPdfBlob(new Blob([b], { type: 'application/pdf' }), f.name); }
+    catch (err) { toast('No se pudo abrir el PDF: ' + err.message, 4500); }
   } else if (t.dataset.photo) openLightbox(+t.dataset.photo);
 });
 $('#vBody').addEventListener('change', e => { if (e.target.id === 'hideEmpty') { LS.set('hideEmpty', e.target.checked); current >= 0 ? renderCable() : renderSched(); } });
@@ -875,14 +891,57 @@ $('#vBody').addEventListener('change', e => { if (e.target.id === 'hideEmpty') {
 $('#vBack').addEventListener('click', () => { if (history.state && history.state.detail) history.back(); else closeCable(); });
 window.addEventListener('popstate', () => { if (!isWide() && current >= 0) closeCable(); });
 $('#vAddList').addEventListener('click', () => {
-  if (current < 0 && !(curSched >= 0 && SC.pendData)) return;
-  const tag = current >= 0 ? DATA.rows[current][TAGI] : SC.pendData.rows[curSched][SC.pendData.tagi];
+  if (current < 0 && !(curSched >= 0 && schedSrc)) return;
+  const tag = current >= 0 ? DATA.rows[current][TAGI] : schedSrc.rows[curSched][schedSrc.tagi];
   if (scanList.some(x => norm(x.tag) === norm(tag))) return toast('Ese cable ya está en la lista');
   scanList.push({ tag, code: tag, found: true, time: new Date().toISOString(), ...(current < 0 ? { sched: true } : {}) });
   LS.set('scanList', scanList); renderList(); $('#vAddList').textContent = 'En la lista'; toast('Añadido a la lista');
 });
 
+/* ---------- Status de campo (tendido / coil): se guarda como una nota, no toca las tablas ---------- */
+const FS = { tag: '', tipo: '', from: '', to: '' };
+function fieldStatusCard(notes, canEd) {
+  const last = notes.find(n => n.estado);   // las notas ya vienen de la más nueva a la más antigua
+  const e = last && last.estado;
+  return `<div class="fs-card">${e ? `<span><span class="fs-pill ${e.tipo === 'COIL' ? 'coil' : ''}">${esc(e.tipo)}</span><b>Último status de campo</b></span>
+    <small>${esc(new Date(last.date).toLocaleString('es-ES'))}${last.author ? ', ' + esc(last.author) : ''}</small>
+    <small>${e.tipo === 'COIL' ? `Coil tendidos: ${esc(e.metros)} m. Motivo: ${esc(e.motivo)}. ` : ''}Miniruta from: ${esc(e.from)}. Miniruta to: ${esc(e.to)}.</small>` : '<b>Sin status de campo</b><small>Todavía nadie ha marcado este cable como tendido o coil.</small>'}
+    ${canEd ? '<div class="btn-row"><button class="btn primary" id="btnFieldSt">Cambiar status</button></div>' : ''}</div>`;
+}
+function fsValid() {
+  const ok = FS.tipo && FS.from && FS.to && (FS.tipo !== 'COIL' || (parseFloat($('#fsMetros').value.replace(',', '.')) > 0 && $('#fsMotivo').value.trim()));
+  $('#fsSave').disabled = !ok; return !!ok;
+}
+function fsPaint() {
+  [['#fsTipo', FS.tipo], ['#fsFrom', FS.from], ['#fsTo', FS.to]].forEach(([s, v]) => $$(s + ' .filter').forEach(b => { b.classList.toggle('on', b.dataset.v === v); b.setAttribute('aria-pressed', b.dataset.v === v); }));
+  $('#fsCoil').hidden = FS.tipo !== 'COIL'; fsValid();
+}
+function openFieldStatus(tag) {
+  Object.assign(FS, { tag, tipo: '', from: '', to: '' });
+  $('#fsTag').textContent = tag; $('#fsMetros').value = ''; $('#fsMotivo').value = '';
+  fsPaint(); $('#fsModal').hidden = false;
+}
+$('#fsClose').addEventListener('click', () => { $('#fsModal').hidden = true; });
+$('#fsForm').addEventListener('click', e => {
+  const b = e.target.closest('.filter'); if (!b) return;
+  const g = b.parentElement.id; FS[g === 'fsTipo' ? 'tipo' : g === 'fsFrom' ? 'from' : 'to'] = b.dataset.v; fsPaint();
+});
+$('#fsForm').addEventListener('input', fsValid);
+$('#fsSave').addEventListener('click', async () => {
+  if (!fsValid()) return;
+  const coil = FS.tipo === 'COIL', metros = coil ? parseFloat($('#fsMetros').value.replace(',', '.')) : 0, motivo = coil ? $('#fsMotivo').value.trim() : '';
+  const estado = { tipo: FS.tipo, ...(coil ? { metros, motivo } : {}), from: FS.from, to: FS.to };
+  const text = `${FS.tipo} · ` + (coil ? `Coil tendidos: ${metros} m · Motivo: ${motivo} · ` : '') + `Miniruta from: ${FS.from} · Miniruta to: ${FS.to}`;
+  const tag = FS.tag;
+  await DB.put('notes', { uid: newUid(), tag, text, estado, date: new Date().toISOString(), author: cloud.author(), synced: false });
+  $('#fsModal').hidden = true;
+  await refreshFlags(); if (current >= 0) await renderCable();
+  toast('Status guardado' + offlineNote());
+  syncCloud(true);
+});
+
 /* fotos */
+const offlineNote = () => cloud.on() && !navigator.onLine ? ' en este dispositivo. Sin cobertura: se subirá sola al volver' : '';
 async function addPhotos(fileList) {
   const tag = DATA.rows[current][TAGI];
   for (const f of fileList) {
@@ -890,7 +949,7 @@ async function addPhotos(fileList) {
     await DB.put('files', { uid: newUid(), tag, kind: 'photo', name: f.name || 'foto.jpg', type: blob.type, blob, date: new Date().toISOString(), author: cloud.author(), synced: false });
   }
   await refreshFlags(); await renderCable();
-  toast(fileList.length > 1 ? 'Fotos guardadas' : 'Foto guardada');
+  toast((fileList.length > 1 ? 'Fotos guardadas' : 'Foto guardada') + offlineNote());
   syncCloud(true);
 }
 $('#filePdf').addEventListener('change', async e => {
@@ -901,7 +960,7 @@ $('#filePdf').addEventListener('change', async e => {
   if (f.size > 25 * 1024 * 1024) return toast('El PDF pesa más de 25 MB y no se puede subir desde la app', 5000);
   try {
     toast(`Subiendo ${f.name}`, 60000);
-    const r = await apiPost('uploadPdf', { tag, name: f.name, data: await fileToB64(f) });
+    const r = await apiPost('uploadPdf', { tag, name: f.name, data: await fileToB64(f), tipo: 'pulling' });
     await syncCloud(true);
     if (current >= 0 && DATA.rows[current][TAGI] === tag) await renderCable();
     toast(`PDF subido a Drive como "${r.name}"`, 4000);
@@ -947,6 +1006,7 @@ function listVal(tag, name) {
   if (ri !== undefined && COL.has(name)) return DATA.rows[ri][COL.get(name)];
   const pi = SC.pendIdx && SC.pendIdx.get(norm(tag));
   if (pi !== undefined) { const k = SC.pendData.columns.findIndex(c => nname(c.name) === nname(name)); if (k >= 0) return SC.pendData.rows[pi][k]; }
+  if (typeof CCD !== 'undefined' && CCD.src) { const ci = CCD.idx.get(norm(tag)); if (ci !== undefined) { const k = CCD.src.columns.findIndex(c => nname(c.name) === nname(name)); if (k >= 0) return CCD.src.rows[ci][k]; } }
   return '';
 }
 function listMatrix(withNotes = true) {
@@ -987,7 +1047,8 @@ $('#listTable').addEventListener('click', e => {
   const tr = e.target.closest('tr[data-n]');
   if (tr) {
     const x = scanList[+tr.dataset.n], ri = IDX.get(norm(x.tag)), pi = SC.pendIdx && SC.pendIdx.get(norm(x.tag));
-    if (ri !== undefined) openCable(ri, true); else if (pi !== undefined) openSched(pi);
+    const cci = typeof CCD !== 'undefined' && CCD.src ? CCD.idx.get(norm(x.tag)) : undefined;
+    if (ri !== undefined) openCable(ri, true); else if (pi !== undefined) openSched(pi, SC.pendData); else if (cci !== undefined) openSched(cci, CCD.src);
   }
 });
 
@@ -1141,6 +1202,40 @@ $$('[data-preset]').forEach(b => b.addEventListener('click', () => {
 $('#cClose').addEventListener('click', () => { $('#colsModal').hidden = true; LS.set('newCols', []); if (current >= 0) renderCable(); });
 $('#btnCols').addEventListener('click', () => DATA ? openCols() : toast('Todavía no hay tabla cargada'));
 
+/* ---------- Actualizar sin entrar en Ajustes ---------- */
+let refreshing = false;
+async function refreshAll() {
+  if (refreshing) return;
+  if (!cloud.on()) return toast('Falta la clave de conexión. Pídela a quien administra la app.', 4500);
+  if (!navigator.onLine) return toast('Sin cobertura. Sigues viendo los últimos datos guardados.', 4000);
+  refreshing = true; $$('.js-refresh').forEach(b => b.classList.add('spin'));
+  const bad = [];
+  try {
+    if (!(await pullTable(true))) bad.push('la tabla');
+    await syncCloud(true);
+    if (typeof pullSchedule === 'function' && !(await pullSchedule(true))) bad.push('el CC_SCHEDULE');
+    if (typeof pullRoutes === 'function' && RT.data && !(await pullRoutes(true))) bad.push('transit y bandejas');
+    if (typeof pullCC === 'function' && CCD.data && !(await pullCC(true))) bad.push('la tabla CC');
+    const t = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    if (bad.length) toast('No se pudo actualizar ' + bad.join(', ') + '. Se mantienen los datos guardados.', 5500);
+    else { LS.set('lastUpd', t); paintLastUpd(); toast('Datos actualizados a las ' + t, 3000); }
+  } finally { refreshing = false; $$('.js-refresh').forEach(b => b.classList.remove('spin')); if (current >= 0) renderCable(); renderSearch(); if ($('#app').dataset.tab === 'stats' && typeof renderStats === 'function') renderStats(); }
+}
+const paintLastUpd = () => { const t = LS.get('lastUpd', ''); $$('#lastUpd').forEach(e => { e.textContent = t ? 'a las ' + t : ''; }); };
+$('#btnRefresh').addEventListener('click', refreshAll);
+
+/* ---------- Tema claro u oscuro ---------- */
+const THEMES = ['auto', 'light', 'dark'], THEME_ES = { auto: 'Tema: automático', light: 'Tema: claro', dark: 'Tema: oscuro' };
+function applyTheme() {
+  const t = LS.get('theme', 'auto');
+  if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  $$('.js-themelbl').forEach(e => { e.textContent = THEME_ES[t].replace('Tema: ', 'Tema ').replace('automático', 'auto'); });
+  $('#btnTheme').title = THEME_ES[t];
+}
+$('#btnTheme').addEventListener('click', () => { const t = LS.get('theme', 'auto'); LS.set('theme', THEMES[(THEMES.indexOf(t) + 1) % 3]); applyTheme(); if ($('#app').dataset.tab === 'stats' && typeof renderStats === 'function') renderStats(); });
+applyTheme(); paintLastUpd();
+window.addEventListener('online', connStatus); window.addEventListener('offline', connStatus);
+
 /* ---------- Ajustes ---------- */
 function saveSettingsFields(start = true) {
   const u = $('#sScriptUrl').value.trim();
@@ -1153,17 +1248,36 @@ function saveSettingsFields(start = true) {
   LS.set('sheetName', $('#sSheetName').value.trim() || 'ESCANEOS'); LS.set('csvUrl', $('#sCsvUrl').value.trim());
   if (start) startCloud();
 }
+/* PIN opcional (pinHash en config.js): evita que se cambien los ajustes sin querer */
+const sha256 = async s => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(b => b.toString(16).padStart(2, '0')).join('');
+let pinOk = false;
+function askPin() {
+  return new Promise(res => {
+    const o = document.createElement('div'); o.className = 'overlay modal'; o.style.cssText = 'display:flex;align-items:center;justify-content:center;padding:16px';
+    o.innerHTML = '<form class="pin-box"><h2>Ajustes protegidos</h2><label class="field"><span>PIN</span><input id="pinIn" type="password" inputmode="numeric" autocomplete="off"></label><p class="help" id="pinErr"></p><div class="btn-row"><button class="btn primary" type="submit">Entrar</button><button class="btn" type="button" id="pinNo">Cancelar</button></div></form>';
+    document.body.appendChild(o); const inp = o.querySelector('#pinIn'); inp.focus();
+    const done = v => { o.remove(); res(v); };
+    o.querySelector('#pinNo').onclick = () => done(false);
+    o.querySelector('form').onsubmit = async e => { e.preventDefault(); if (await sha256(inp.value) === CFG.pinHash) done(true); else { o.querySelector('#pinErr').textContent = 'PIN incorrecto'; inp.select(); } };
+  });
+}
 $('#btnSettings').addEventListener('click', async () => {
+  if (CFG.pinHash && cloud.on() && !pinOk) { if (!(await askPin())) return; pinOk = true; }
+  openSettings();
+});
+async function openSettings() {
   $('#setModal').hidden = false;
   $('#sCsvUrl').value = LS.get('csvUrl', ''); $('#sScriptUrl').value = scriptUrl(); $('#sToken').value = LS.get('cloudToken', '');
   $('#sMeta').value = LS.get('metaSemanal', CFG.metaSemanal || 3000);
   if (DATA) { $('#sMetCol').innerHTML = DATA.columns.map(c => `<option value="${esc(c.name)}">${esc(c.letter)}  ${esc(c.name)}</option>`).join(''); $('#sMetCol').value = (typeof metrosCol === 'function' && metrosCol()) || ''; }
+  $('#sUser').textContent = LS.get('userCode', '') ? `Sesión: ${LS.get('userName', '') || LS.get('userCode', '')}${canEditNotes() ? '' : ' (solo lectura)'}` : ''; $('#sLogout').hidden = !LS.get('userCode', '');
   $('#sAdmin').value = LS.get('adminToken', ''); $('#sAuthor').value = LS.get('author', ''); $('#sSheetName').value = LS.get('sheetName', 'ESCANEOS');
   const [n, f] = await Promise.all([DB.all('notes'), DB.all('files')]);
   const pend = n.filter(x => !x.synced).length + f.filter(x => !x.synced && !x.localOnly && x.kind === 'photo').length;
   $('#sInfo').textContent = (DATA ? `Tabla: ${DATA.rows.length} cables y ${DATA.columns.length} columnas, ${DATA.generado || ''}. ` : 'Sin tabla todavía. ')
     + (cloud.on() ? `Conectado. ${PDFS.length} PDF en Drive. Pendientes de subir: ${pend}.` : 'Falta solo la clave: escribe la que pusiste en TOKEN dentro del script.');
-});
+}
+$('#sLogout').addEventListener('click', () => { $('#setModal').hidden = true; loginNeeded(''); });
 $('#sClose').addEventListener('click', () => { saveSettingsFields(); $('#setModal').hidden = true; });
 $('#sPull').addEventListener('click', async () => { saveSettingsFields(false); await pullTable(false); });
 $('#sSync').addEventListener('click', async () => { saveSettingsFields(false); await syncCloud(false); });
@@ -1278,25 +1392,32 @@ document.addEventListener('visibilitychange', () => {
 const cloud = {
   on: () => !!(scriptUrl() && LS.get('cloudToken', '')),
   admin: () => !!(scriptUrl() && LS.get('cloudToken', '') && LS.get('adminToken', '')),   // solo quien tiene la clave de administrador ve los botones de PDF
-  author: () => LS.get('author', ''),
+  author: () => LS.get('userName', '') || LS.get('author', ''),
 };
 const MAX_CLOUD = 15 * 1024 * 1024;   // fotos mayores se quedan solo en el dispositivo
 const newUid = () => (crypto.randomUUID ? crypto.randomUUID() : 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
 
+/* con poca cobertura una petición puede quedarse colgada: se corta y se reintenta luego */
+async function fetchT(url, opts, ms) {
+  const ac = new AbortController(), t = setTimeout(() => ac.abort(), ms);
+  try { return await fetch(url, { ...opts, signal: ac.signal }); }
+  catch (e) { throw e.name === 'AbortError' ? new Error('la conexión es muy lenta o no hay cobertura') : e; }
+  finally { clearTimeout(t); }
+}
 async function apiGet(action, params = {}) {
-  const q = new URLSearchParams({ action, token: LS.get('cloudToken', ''), ...params });
-  const r = await fetch(scriptUrl() + '?' + q);
+  const q = new URLSearchParams({ action, token: LS.get('cloudToken', ''), user: LS.get('userCode', ''), ...params });
+  const r = await fetchT(scriptUrl() + '?' + q, {}, /^(data|schedule|routes|ccdata)$/.test(action) ? 120000 : 30000);
   const j = await r.json();
-  if (!j.ok) throw new Error(j.error || 'error del servidor');
+  if (!j.ok) { if (j.login) { loginNeeded(j.error); } throw new Error(j.error || 'error del servidor'); }
   return j;
 }
 async function apiPost(action, payload = {}) {
-  const r = await fetch(scriptUrl(), {
+  const r = await fetchT(scriptUrl(), {
     method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action, token: LS.get('cloudToken', ''), ...(/Pdf$/.test(action) ? { admin: LS.get('adminToken', '') } : {}), ...payload }),
-  });
+    body: JSON.stringify({ action, token: LS.get('cloudToken', ''), user: LS.get('userCode', ''), ...(/Pdf$/.test(action) ? { admin: LS.get('adminToken', '') } : {}), ...payload }),
+  }, 120000);
   const j = await r.json();
-  if (!j.ok) throw new Error(j.error || 'error del servidor');
+  if (!j.ok) { if (j.login) { loginNeeded(j.error); } throw new Error(j.error || 'error del servidor'); }
   return j;
 }
 const fileToB64 = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(b); });
@@ -1345,12 +1466,38 @@ async function cloudDelete(action, payload) {
   catch (e) { toast('No se pudo borrar en la nube. Comprueba la conexión y vuelve a intentarlo.', 4500); return false; }
 }
 
+/* ---------- Entrar con código de personal (hoja PERSONAL) ---------- */
+const canEditNotes = () => !cloud.on() || LS.get('userNotes', true) !== false;
+async function ensureLogin() {
+  if (!cloud.on() || LS.get('userCode', '')) return;
+  try { await apiGet('login'); } catch { /* si el servidor pide código, apiGet ya abrió la pantalla; sin cobertura se sigue */ }
+}
+function loginNeeded(msg) {
+  LS.set('userCode', ''); LS.set('userName', '');
+  $('#loginErr').textContent = LS.get('userSeen', false) ? (msg || '') : '';
+  $('#loginModal').hidden = false; setTimeout(() => $('#loginCode').focus(), 50);
+}
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const code = $('#loginCode').value.trim(); if (!code) return;
+  $('#loginGo').disabled = true; $('#loginErr').textContent = '';
+  try {
+    const j = await apiGet('login', { user: code });
+    LS.set('userCode', code); LS.set('userName', j.nombre || ''); LS.set('userNotes', !!j.notas); LS.set('userSeen', true);
+    $('#loginModal').hidden = true; $('#loginCode').value = '';
+    toast(j.nombre ? 'Hola, ' + j.nombre : 'Sesión iniciada');
+    if (DATA) { renderCable && current >= 0 && renderCable(); }
+    pullTable(true).then(() => syncCloud(true));
+  } catch (err) { $('#loginErr').textContent = err.message === 'Failed to fetch' ? 'Sin conexión: la primera vez hace falta cobertura' : err.message; }
+  finally { $('#loginGo').disabled = false; }
+});
+
 /* Sincronización: sube lo pendiente y trae lo de los demás */
 let syncing = false, resync = false, cloudStarted = false;
 function startCloud() {
   if (cloudStarted || !cloud.on()) return;
   cloudStarted = true;
-  pullTable(true).then(() => syncCloud(true)).then(() => typeof pullSchedule === 'function' && pullSchedule(true));
+  ensureLogin().then(() => pullTable(true)).then(() => syncCloud(true)).then(() => typeof pullSchedule === 'function' && pullSchedule(true));
   window.addEventListener('online', () => syncCloud(true));
   setInterval(() => { if (!document.hidden) syncCloud(true); }, 90000);
 }
@@ -1364,7 +1511,7 @@ async function syncCloud(silent) {
     for (const n of ln) {
       if (n.synced) continue;
       if (!n.uid) n.uid = newUid();
-      await apiPost('addNote', { id: n.uid, tag: n.tag, text: n.text, date: n.date, author: n.author || '' });
+      await apiPost('addNote', { id: n.uid, tag: n.tag, text: n.text, date: n.date, author: n.author || '', ...(n.estado ? { estado: n.estado } : {}) });
       n.synced = true; await DB.put('notes', n);
     }
     for (const f of lf) {
@@ -1380,16 +1527,17 @@ async function syncCloud(silent) {
     }
 
     const s = await apiGet('sync', PDFHASH ? { pdfHash: PDFHASH } : {});
-    if (s.pdfs) { setPdfs(s.pdfs, s.pdfHash); await DB.put('meta', { hash: s.pdfHash, list: s.pdfs }, 'pdfs'); }
+    if (s.me) { LS.set('userNotes', !!s.me.notas); if (s.me.nombre) LS.set('userName', s.me.nombre); }
+    if (s.pdfs) { setPdfs(s.pdfs, s.pdfHash); await DB.put('meta', { hash: s.pdfHash, list: s.pdfs }, 'pdfs'); if ($('#tab-library').classList.contains('active')) renderLibrary(); }
     const notes = await DB.all('notes'), files = await DB.all('files');
     const nUid = new Set(notes.map(x => x.uid)), fUid = new Set(files.map(x => x.uid));
     const rn = new Set(s.notes.map(x => x.id)), rf = new Set(s.files.map(x => x.uid));
-    for (const n of s.notes) if (!nUid.has(n.id)) await DB.put('notes', { uid: n.id, tag: n.tag, text: n.text, date: n.date, author: n.author, synced: true });
+    for (const n of s.notes) if (!nUid.has(n.id)) await DB.put('notes', { uid: n.id, tag: n.tag, text: n.text, date: n.date, author: n.author, synced: true, ...(n.estado ? { estado: JSON.parse(n.estado) } : {}) });
     for (const f of s.files) if (!fUid.has(f.uid)) await DB.put('files', { uid: f.uid, tag: f.tag, kind: f.kind, name: f.name, type: f.mime, date: f.date, author: f.author, synced: true });
     for (const n of notes) if (n.synced && !rn.has(n.uid)) await DB.del('notes', n.id);          // borrada por otra persona
     for (const f of files) if (f.synced && !rf.has(f.uid)) await DB.del('files', f.id);
     await refreshFlags(); renderSearch();
-    if (current >= 0 && !($('#noteText') && $('#noteText').value)) await renderCable();
+    if (current >= 0 && !($('#noteText') && $('#noteText').value) && $('#fsModal').hidden) await renderCable();
     if (!silent) toast('Notas, fotos y PDF sincronizados');
   } catch (e) { if (!silent) toast('No se pudo sincronizar: ' + e.message, 5000); }
   finally { syncing = false; if (resync) { resync = false; syncCloud(true); } }
@@ -1451,6 +1599,8 @@ document.addEventListener('keydown', e => {
   await loadData();
   if (typeof loadSchedule === 'function') await loadSchedule();
   if (typeof loadRoutes === 'function') await loadRoutes();
+  if (typeof loadCC === 'function') await loadCC();
+  paintSrcSeg();
   startCloud();
   // en el móvil, si la cámara estaba activa y ya hay permiso, se abre sola
   try {

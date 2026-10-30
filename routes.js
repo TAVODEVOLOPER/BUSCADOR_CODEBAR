@@ -206,3 +206,4 @@ async function routesPdf() {
   } catch (e) { toast('No se pudo crear el PDF: ' + e.message, 5000); }
   finally { btn.disabled = false; }
 }
+

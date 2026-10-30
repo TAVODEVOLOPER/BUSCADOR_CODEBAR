@@ -71,6 +71,21 @@ La pestaña **Resumen** muestra el avance general (% de cables tendidos sobre el
 
 La pestaña **Transit** usa la columna `ROUTE_CODES` del CC_SCHEDULE (todas las disciplinas): buscas el código de una bandeja o tránsito y ves cuántos cables pasan, de qué disciplina son y su `CURRENT_STATUS`. Se puede filtrar por disciplina y status, añadir esos cables a la lista y copiar los tags. Se descarga al abrir la pestaña por primera vez y con **Actualizar** (o Ajustes → Actualizar el CC_SCHEDULE). El CC_SCHEDULE debe tener la columna `ROUTE_CODES`.
 
+## 5c. Novedades v1.10
+
+- **Buscar en todo el proyecto**: sobre el buscador hay dos botones, "Mi tabla" y "Todo el proyecto". El segundo busca en CC_SCHEDULE (todas las disciplinas). Hay que descargarlo una vez con cobertura (Ajustes → Actualizar el CC_SCHEDULE) y queda guardado para trabajar sin señal. Solo trae las columnas de `CC_COLUMNAS` del script, no las 95.
+- **Sin cobertura**: la tabla, el CC_SCHEDULE, las rutas y los PDF abiertos antes funcionan sin señal. Las notas y fotos se guardan en el teléfono y se suben solas al volver la cobertura (insignia naranja en el botón de actualizar).
+- **Actualizar sin entrar a Ajustes**: botón de actualizar en la cabecera. **Tema** claro/oscuro/auto con el botón de la cabecera.
+- **Proteger Ajustes con PIN** (opcional): pon en `config.js` `pinHash` con el SHA-256 del PIN. Si queda vacío, Ajustes queda abierto.
+- **Biblioteca** (pestaña nueva): PDF útiles del proyecto, no ligados a un cable. Dos carpetas en Drive, `CableScan_PDF_Isometrico_Bandeja` y `CableScan_PDF_Transit` (se crean con `autorizar`). Cada subcarpeta (por ejemplo, Nivel 1, Nivel 2) es una categoría y se ordena sola. Se busca por nombre o carpeta. El administrador sube desde la app (elige tipo y carpeta, y si no existe se crea) o suelta archivos en Drive y ejecuta `indexarPdf`.
+- **PDF solo lectura**: se ven dentro de la app (zoom, páginas), sin botón de descarga ni impresión. Es una barrera práctica, no un bloqueo absoluto: quien sepa puede capturar la pantalla.
+
+## 5d. Personal, permisos y status de campo
+
+- **Hoja PERSONAL** (se crea con `autorizar`): columnas `codigo`, `nombre`, `cargo`, `activo` (SI/NO) y `editar_notas` (SI/NO). Mientras esté vacía, la app funciona abierta como antes. Con filas, cada persona escribe su código al abrir la app. Un código desactivado no entra. Sin `editar_notas` solo puede leer: no ve notas, fotos ni status. Los cambios en la hoja llegan solos en la siguiente sincronización. El autor de cada nota sale del nombre de la hoja, no se puede falsear.
+- **Cambiar status** (ficha del cable): panel con Tendido o Coil. Coil pide coil tendidos (m), motivo, miniruta from y miniruta to (SI/NO/NA). Tendido pide miniruta from y to. Se guarda como una nota (columna `estado` de NOTAS) y no cambia las tablas. Funciona sin cobertura.
+- **PIN de Ajustes**: ya está puesto en `config.js` (`pinHash`).
+
 ## 6. Cuando la tabla crece
 
 Añade filas y columnas en la pestaña CABLEADO cuando quieras:
