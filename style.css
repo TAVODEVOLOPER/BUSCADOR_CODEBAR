@@ -563,3 +563,20 @@ body.no-scroll{overflow:hidden}
 .lb-cat[open]>summary::after{content:"−"}
 .lb-cat .item{padding:8px 12px;border-top:1px solid var(--hair)}
 .lb-cat .item small{display:block;color:var(--muted,#667)}
+
+/* fondo de la app y pie fijo con versión y autor */
+body{background:var(--bg) url(bg-m.jpg) center/cover fixed no-repeat}
+@media (min-width:900px){body{background-image:url(bg.jpg)}}
+.rail{background:color-mix(in srgb,var(--surface) 80%,transparent);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.detail{background:color-mix(in srgb,var(--bg) 62%,transparent);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.appfoot{position:fixed;left:0;right:0;bottom:calc(63px + env(safe-area-inset-bottom));z-index:24;display:flex;justify-content:center;gap:10px;padding:3px 10px;font:600 11px var(--mono);color:var(--muted);background:color-mix(in srgb,var(--surface) 88%,transparent);pointer-events:none}
+.appfoot .dev{font-family:var(--font);font-weight:700;color:var(--ink)}
+.appfoot span+span::before{content:"|";margin-right:10px;color:var(--muted);font-weight:400}
+.rail-scroll{padding-bottom:calc(108px + env(safe-area-inset-bottom))}
+@media (min-width:760px){
+  .appfoot{bottom:0;z-index:50}
+  .rail-scroll{padding-bottom:34px}
+}
+@media (min-width:900px){.appfoot{display:none}}
+.foot-ver.dev{font-family:var(--font);font-weight:700;color:#DCE7ED}
+.overlay.pv .pv-bar,.sheet{background:var(--surface)}
