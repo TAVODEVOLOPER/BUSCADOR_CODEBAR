@@ -1,0 +1,211 @@
+# Cable Scan BW04
+
+App para escanear el código de barras de un cable y ver su ficha (columnas A–U de la tabla, ampliable a todas), el PDF de pulling, fotos y notas del equipo. Funciona en móvil, tablet y escritorio, y se instala como app.
+
+## Quién hace qué
+
+| | Tú (propietario) | El equipo (la app) |
+|---|---|---|
+| Tabla de cables | La editas en tu Google Sheet. Puede crecer en filas y columnas. | Solo la lee. La app no tiene ninguna función para modificarla. |
+| PDF de pulling | Los copias a una carpeta de tu Drive. | Solo los abre. No pueden subirlos ni borrarlos. |
+| Notas y fotos de cada tag | También puedes. | Las añaden y las ven todos. |
+
+El equipo no necesita acceso a tu Sheet ni a tu Drive: solo la dirección de la app y una clave.
+
+## 1. Publicar la app en GitHub (una vez)
+
+1. En GitHub: **New repository** → `cable-scan` → Create.
+2. Sube **el contenido de esta carpeta** (con `.nojekyll`, `fonts/` y `vendor/`). **No subas la carpeta `extras/`**: lleva una copia de la tabla.
+3. **Settings → Pages → Deploy from a branch → `main` / `(root)` → Save.**
+4. En 1–2 minutos tendrás `https://TU_USUARIO.github.io/cable-scan/`.
+
+## 2. Conectar con tu Google (5 minutos, una vez)
+
+1. Sube tu Excel a Google Drive y ábrelo con **Google Sheets**. La pestaña con la tabla se llama **CABLEADO** y tiene los encabezados en la fila 1 (incluida `CABLE_NUMBER`).
+2. En esa hoja: **Extensiones → Apps Script**. Borra lo que haya y pega todo `apps-script.gs`.
+3. Cambia `TOKEN` por una frase larga y secreta.
+4. Arriba elige la función **`autorizar`** y pulsa **Ejecutar**. Acepta los permisos (si sale "Google no ha verificado esta app": *Configuración avanzada → Ir a … (no seguro)*; es tu propio script). Se crean las pestañas NOTAS, ARCHIVOS y PDF_INDEX y las carpetas **CableScan_PDF** y **CableScan_Fotos** en tu Drive.
+5. **Implementar → Nueva implementación → Aplicación web.** *Ejecutar como: Yo. Quién tiene acceso: Cualquier usuario.* Copia la URL que termina en `/exec`.
+6. Recarga la hoja y, en el menú nuevo **Cable Scan**, pulsa **Activar índice automático de PDF**.
+7. La URL `/exec` ya viene escrita en `config.js` (campo `scriptUrl`): si creas otra implementación, cámbiala ahí y sube el archivo. En la app solo falta la clave: **Ajustes** → escribe la clave (`TOKEN`) y tu nombre → **Probar conexión**. Cada persona del equipo lo hace una vez en su dispositivo. La clave no se guarda en GitHub.
+
+## 3. PDF de pulling
+
+**Desde la app (tú):** en el script pon una frase secreta en `ADMIN_TOKEN` (distinta de `TOKEN`), ejecuta `autorizar` y crea una nueva versión de la implementación. En la app, **Ajustes → Clave de administrador**. En la ficha de cada cable aparece **Subir PDF de pulling** (y **Quitar** junto a cada PDF). El archivo se guarda en Drive con el tag en el nombre y la carpeta `CableScan_PDF` se crea sola si no existe. Sin esa clave, nadie del equipo puede subir ni quitar PDF.
+
+**Desde Drive:**
+
+- Copia los PDF a la carpeta **CableScan_PDF** de tu Drive (se admiten subcarpetas).
+- **El nombre del archivo debe contener el tag completo del cable**, por ejemplo `#HKF.BW41=731.CKA32-BR03.WG20.pdf` o `Pulling #HKF.BW41=731.CKA32-BR03.WG20 rev2.pdf`. Da igual mayúsculas o minúsculas. Un PDF sirve a varios cables si su nombre incluye varios tags.
+- Con el índice automático, los PDF nuevos aparecen en la app en unos 30 minutos. Para verlos ya: menú **Cable Scan → Actualizar índice de PDF** en la hoja.
+- Si ya tienes los PDF en otra carpeta, pon su ID (el final de la URL de la carpeta) en `PDF_FOLDER_ID` del script.
+- Máximo 30 MB por PDF.
+
+## 4. Resumen de avance (CC_SCHEDULE)
+
+La pestaña **Resumen** muestra el avance general (% de cables tendidos sobre el total del proyecto) y el avance por semana, con gráficos que funcionan sin conexión.
+
+- **Total de cables:** crea en tu Sheet una pestaña llamada **`CC_SCHEDULE`** y pega en ella las columnas `CABLE_NUMBER` y `Discipline` del CC_SCHEDULE (con su encabezado, o el export entero). Solo se usa el tag y la cantidad; si pegas el export entero, el resto de columnas se ignora.
+- **Solo nuestra disciplina:** se cuentan solo los cables con `Discipline = INS` (cambia `DISCIPLINA_FILTRO` en el script y `disciplina` en `config.js`; vacío = todos).
+- **Metros por semana:** suma de `Cable_Routing_Produc` de los cables en TENDIDO y COIL, por la semana de su último estado, con meta de 3000 m/semana (cambiable en **Ajustes → Resumen**, junto con la columna de metros).
+- **Estados:** tabla con el conteo de `Status Actual` (sin PENDING, para no confundir con el total del CC_SCHEDULE).
+- **Metros:** salen de la columna `REAL_TENDIDO` de la tabla; botones Tendido / Coil / Tendido + Coil.
+- **Etiquetas clave** (se pulsan y abren Buscar con el filtro puesto): *Working por completar* (`WORKING` + `Released_CT_2 = Y`), *Coil por completar* (`COIL` + `Released_CT_2 = Y`) y *Pending por tender* (del CC_SCHEDULE: `CURRENT_STATUS = PENDING` + `Released_CT = Y`).
+- **Pending por tender** abre Buscar con los datos de esos cables sacados del CC_SCHEDULE (todas sus columnas): puedes filtrarlos por cualquier columna del CC_SCHEDULE y abrir su ficha. Hay que pulsar Ajustes → Actualizar el CC_SCHEDULE para que se descarguen.
+- Con cualquier filtro puesto en Buscar aparece **Añadir los N a la lista**; en Lista, **Lista de trabajo en PDF** deja elegir y ordenar las columnas (por defecto Installer, CABLE_NUMBER, Released_CT, Cable_Routing_Produc, Cable_Routing_Coil Total, MiniRuta_From, MiniRuta_to y una columna NOTAS en blanco para observaciones).
+- Del total INS se quitan los cables con `CURRENT_STATUS` DAMAGED o SPARE (el CC_SCHEDULE necesita las columnas `CURRENT_STATUS` y `Released_CT`).
+- **Estado y semana:** salen de la tabla CABLEADO (columnas `Status Actual` y `SEMANA`).
+- En la app, **Ajustes → Actualizar el CC_SCHEDULE** (también se descarga solo al abrir; solo si cambió).
+- Sin Google: **Ajustes → Sin Google → Importar el CC_SCHEDULE (.xlsx)**. Se lee en ese dispositivo (mejor en el ordenador, pesa unos 8 MB).
+- Los cables de la tabla que no figuren en el CC_SCHEDULE se avisan y no cuentan en el avance sobre el total.
+
+## 5. Cambiar de cuenta de Google
+
+1. Con la cuenta nueva, copia tu Sheet (desde la cuenta antigua: compártelo con la nueva, ábrelo y **Archivo → Hacer una copia**). La copia lleva las pestañas (tabla, NOTAS, ARCHIVOS) y el script.
+2. En la copia: **Extensiones → Apps Script**, revisa `TOKEN` y `ADMIN_TOKEN`, ejecuta **`autorizar`** y haz una **Nueva implementación** (Aplicación web; Ejecutar como: Yo; Acceso: Cualquier usuario).
+3. Pon la URL `/exec` nueva en `config.js` (`scriptUrl`), sube el archivo a GitHub y sube el número de `version`. Los dispositivos usan la URL de `config.js` y se actualizan solos; no hay que tocar nada en cada móvil.
+4. PDF: súbelos de nuevo con la app (o a la carpeta `CableScan_PDF` de la cuenta nueva).
+5. Fotos antiguas: comparte la carpeta `CableScan_Fotos` de la cuenta antigua con la nueva (lector) y siguen abriéndose; las fotos nuevas se guardan en la cuenta nueva.
+
+## 5b. Transit y bandejas (pestaña Transit)
+
+La pestaña **Transit** usa la columna `ROUTE_CODES` del CC_SCHEDULE (todas las disciplinas): buscas el código de una bandeja o tránsito y ves cuántos cables pasan, de qué disciplina son y su `CURRENT_STATUS`. Se puede filtrar por disciplina y status, añadir esos cables a la lista y copiar los tags. Se descarga al abrir la pestaña por primera vez y con **Actualizar** (o Ajustes → Actualizar el CC_SCHEDULE). El CC_SCHEDULE debe tener la columna `ROUTE_CODES`.
+
+## 5c. Novedades v1.10
+
+- **Buscar en todo el proyecto**: sobre el buscador hay dos botones, "Mi tabla" y "Todo el proyecto". El segundo busca en CC_SCHEDULE (todas las disciplinas). Hay que descargarlo una vez con cobertura (Ajustes → Actualizar el CC_SCHEDULE) y queda guardado para trabajar sin señal. Solo trae las columnas de `CC_COLUMNAS` del script, no las 95.
+- **Sin cobertura**: la tabla, el CC_SCHEDULE, las rutas y los PDF abiertos antes funcionan sin señal. Las notas y fotos se guardan en el teléfono y se suben solas al volver la cobertura (insignia naranja en el botón de actualizar).
+- **Actualizar sin entrar a Ajustes**: botón de actualizar en la cabecera. **Tema** claro/oscuro/auto con el botón de la cabecera.
+- **Proteger Ajustes con PIN** (opcional): pon en `config.js` `pinHash` con el SHA-256 del PIN. Si queda vacío, Ajustes queda abierto.
+- **Biblioteca** (pestaña nueva): PDF útiles del proyecto, no ligados a un cable. Tres carpetas en Drive, `CableScan_PDF_Isometrico_Bandeja`, `CableScan_PDF_Transit` y `CableScan_PDF_Separadores` (planos de separadores). Se pueden subir varios PDF a la vez (se crean con `autorizar`). Cada subcarpeta (por ejemplo, Nivel 1, Nivel 2) es una categoría y se ordena sola. Se busca por nombre o carpeta. El administrador sube desde la app (elige tipo y carpeta, y si no existe se crea) o suelta archivos en Drive y ejecuta `indexarPdf`.
+- **Buscar dentro del PDF**: el visor muestra el PDF con su texto real. Se puede seleccionar y copiar, y hay un buscador (también con Ctrl+F) que resalta todas las coincidencias, ignora mayúsculas y acentos y salta de una a otra. Un PDF escaneado sin texto sigue viéndose como imagen y no se puede buscar.
+- **PDF solo lectura**: se ven dentro de la app (zoom, páginas), sin botón de descarga ni impresión. Es una barrera práctica, no un bloqueo absoluto: quien sepa puede capturar la pantalla.
+
+## 5d. Personal, permisos y status de campo
+
+- **Hoja PERSONAL** (se crea con `autorizar`): columnas `codigo`, `nombre`, `cargo`, `activo` (SI/NO) y `editar_notas` (SI/NO). Mientras esté vacía, la app funciona abierta como antes. Con filas, cada persona escribe su código al abrir la app. Un código desactivado no entra. Sin `editar_notas` solo puede leer: no ve notas, fotos ni status. Los cambios en la hoja llegan solos en la siguiente sincronización. El autor de cada nota sale del nombre de la hoja, no se puede falsear.
+- **Cambiar status** (ficha del cable): panel con Tendido, Coil o Medición. Coil pide tendido (m), motivo, miniruta from y miniruta to (SI/NO/NA). Tendido pide miniruta from y to. Medición pide la medida de la ruta en campo (m). Cada cambio guarda solo quién lo hizo y la fecha, y la ficha muestra el historial completo (solo el administrador puede borrar entradas). Se guarda como una nota (columna `estado` de NOTAS) y no cambia las tablas. Funciona sin cobertura.
+- **PIN de Ajustes**: ya está puesto en `config.js` (`pinHash`).
+
+- **Vaciar la lista de escaneos** también borra las filas de la pestaña ESCANEOS del Sheet (deja la cabecera). Si no hay cobertura, no se vacía y avisa.
+
+## 5e. Dos sistemas: Cableado y Conexionado
+
+- **Organización**: arriba (móvil y tablet) o en el menú lateral (escritorio) se elige el sistema. **Cableado** reúne Escanear, Buscar, Lista, Transit, Biblioteca, Resumen y Columnas. **Conexionado** tiene su propio Buscar y Resumen. El menú de usuario (icono de persona) agrupa Columnas, Ajustes y Salir.
+- **Clave por defecto**: la clave de conexión viene en `config.js` (`token`, hoy DRAGADOS-ADMIN) y debe ser igual que `TOKEN` en el script. Nadie la escribe. El acceso lo controla la hoja PERSONAL.
+- **Ajustes** solo lo ve quien tenga `admin` = SI en PERSONAL (y sigue pidiendo el PIN).
+- **Hoja PERSONAL**, columnas: `codigo`, `nombre`, `cargo`, `activo`, `editar_notas`, `editar_conexionado`, `admin` (SI/NO). Un administrador también puede subir y quitar PDF desde la app, sin ADMIN_TOKEN.
+- **Conexionado** se alimenta de la pestaña `CONEXIONADO` del Sheet. Las columnas con cabecera verde (#00B050) son las editables; las demás vienen con fórmulas y solo se leen. Filas y columnas nuevas aparecen solas en cada actualización. Cada edición queda en la pestaña `CONEXIONADO_LOG` (cable, columna, antes, después, quién y cuándo) y se ve en el historial de la ficha. Al elegir un status se rellena la fecha de hoy. Sin cobertura, los cambios esperan en el teléfono y se suben solos. Quien no tenga `editar_conexionado` solo lee.
+- El rango `STATUS_FROM_TO` del Sheet define los status permitidos.
+
+## 6. Cuando la tabla crece
+
+Añade filas y columnas en la pestaña CABLEADO cuando quieras:
+- La app descarga la tabla al abrirse **solo si cambió** (ahorra datos móviles). También se puede forzar en **Ajustes → Actualizar la tabla ahora**.
+- Los cables nuevos se encuentran al escanear y al buscar.
+- Las columnas nuevas **no** se añaden solas a la ficha (para no cambiar lo que ve el equipo): la app avisa y las marca como "Nueva" en **Columnas**, donde se activan con un toque.
+- Mantén `CABLE_NUMBER` y los encabezados en la fila 1.
+
+## 7. Cómo se usa
+
+En **Buscar**: "Buscar en" elige una o varias columnas donde buscar el texto, y "Filtrar por columna" funciona como el filtro de Excel (marcas valores de una o varias columnas; entre columnas se combinan).
+
+- **Escanear**: cámara, lector USB o Bluetooth en modo teclado (basta con tener la app abierta) o escribir el tag. Las etiquetas son Code 128 y llevan el tag completo; al ser largas tienen barras muy finas, así que con la cámara: buena luz, el código dentro del recuadro amarillo y lo bastante cerca para que ocupe casi todo el ancho (botón de zoom si tu móvil lo tiene). Un lector USB o Bluetooth las lee sin esfuerzo.
+- **Modo lista**: lee varios códigos seguidos. En **Lista**: Excel, CSV, copiar para pegar en Sheets o **Enviar a Google Sheet** (pestaña ESCANEOS).
+- **Buscar**: por parte del tag, con filtros por status.
+- **Ficha**: columnas elegidas, PDF de Drive, fotos (Hacer foto o galería) y notas con tu nombre. Sin cobertura todo queda pendiente y se sube solo al volver la conexión.
+- **Columnas**: elige las de la ficha y las de la lista/Excel por separado.
+
+## 8. Instalar como app
+
+- **Android y PC (Chrome o Edge):** botón **Instalar** de la barra superior, o menú del navegador → Instalar app.
+- **iPhone y iPad:** en Safari, **Compartir → Añadir a pantalla de inicio**.
+- Una vez instalada abre sin barra del navegador y funciona sin conexión con los datos ya descargados. Incluye accesos directos (Escanear, Buscar, Lista) al mantener pulsado el icono en Android.
+
+## 9. Versión y actualizaciones
+
+La versión se ve en el pie de la app (menú lateral en escritorio, final de la pantalla Escanear en móvil y Ajustes → Acerca de). Sale de `config.js`: al publicar cambios, sube el número de `version` y los dispositivos instalados se actualizan solos y avisan.
+
+## 10. Pantallas
+
+- **Móvil:** pestañas abajo; la ficha ocupa toda la pantalla y el botón Atrás del móvil la cierra. La cámara se abre a pantalla completa con zoom, linterna, cambio de cámara, enfoque al tocar, aviso verde o rojo al leer, modo lista y pantalla siempre encendida. Al volver a abrir la app se reactiva sola si estaba activa.
+- **Tablet:** panel izquierdo con las pestañas y ficha a la derecha.
+- **Escritorio (a partir de 900 px):** menú lateral (Escanear, Buscar, Lista, Columnas, Ajustes) con el estado de la conexión y la versión; en medio la lista o la búsqueda y a la derecha la ficha. En **Lista** la tabla usa todo el ancho y la ficha se abre al lado. Atajos: `/` busca, `Esc` cierra la ficha o la ventana abierta.
+- Claro u oscuro según el sistema.
+
+## Seguridad
+
+La URL `/exec` es pública pero toda acción exige la clave `TOKEN`. Quien tenga URL y clave puede leer los datos y añadir o borrar notas y fotos (no puede modificar la tabla ni los PDF). Para cambiar la clave: edita `TOKEN`, crea *Nueva versión* de la implementación y actualiza la clave en cada dispositivo. Borrar una nota o foto la borra para todos (las fotos van a la papelera de Drive).
+
+## Estructura
+
+```
+index.html  style.css  app.js     la app
+stats.js                          pantalla Resumen (gráficos)
+config.js                         versión y URL de tu script (lo único que se edita al publicar)
+fonts/                            tipografía B612 incluida (funciona sin conexión)
+vendor/                           SheetJS (Excel) y ZXing (lector de códigos)
+sw.js manifest.json icon*.png     instalación y modo sin conexión
+apps-script.gs                    servidor en tu Google (se pega en Apps Script)
+tools/xlsx_a_json.py              Excel a data.json (solo si no usas Google)
+extras/data.json                  copia de la tabla (NO subir a GitHub)
+```
+
+### Conexionado: reglas (v1.16.0)
+- La columna de semana (nombre con SEM o WEEK) se calcula sola con la fecha de su lado (From / To). Si su celda tiene fórmula en el Sheet, se respeta la fórmula.
+- Si STATUS_FROM (o STATUS_TO) está en IMPUTADO, esa sección queda bloqueada. Solo el administrador la puede editar.
+- Solo el administrador puede borrar datos (dejar un campo vacío) y usar «Deshacer» en el historial.
+
+### Menú y filtros (v1.17.0)
+- Menú agrupado con subgrupos: Cableado (En campo, Documentos, Avance), Conexionado (Consulta, Avance) y Herramientas. Se abre un grupo a la vez.
+- En móvil y tablet el menú es un cajón lateral (botón de las tres rayas, arriba a la izquierda). Ya no hay barra de pestañas abajo.
+- En PC, los filtros de Buscar se abren en un panel ancho sobre la ficha, con botón Cerrar. Las etiquetas de status van en una sola fila que se desliza (rueda del ratón o dedo).
+
+### Conexionado (v1.18.0)
+- El Resumen cuenta todos los cables de instrumentación del CC_SCHEDULE (igual que Cableado). Los que todavía no tienen fila en CONEXIONADO salen como "Sin iniciar".
+- Los botones Guardar cambios y Descartar van al final de la ficha, sin flotar.
+
+### Seguridad (v1.19.0)
+La clave `DRAGADOS-ADMIN` va en config.js, que es público en GitHub Pages: no es un secreto. La seguridad real está en el servidor (Apps Script):
+- Sin códigos en la pestaña PERSONAL el servidor no sirve nada (`ABIERTO_SIN_PERSONAL = false`).
+- Freno a los intentos de adivinar códigos: tras 30 códigos incorrectos en 10 minutos se bloquean las entradas nuevas 10 minutos. Quien ya está dentro sigue trabajando. Todo queda en la pestaña SEGURIDAD_LOG (entradas, códigos incorrectos y bloqueos).
+- Todo texto de usuarios (notas, observaciones, tags, historial) se guarda como texto: un valor que empiece por `=`, `+`, `-` o `@` no se ejecuta como fórmula en el Sheet.
+- Límites de tamaño: notas 3000 caracteres, fotos solo JPG, PNG o WEBP de hasta 8 MB, hasta 5000 filas por envío.
+- Una nota o foto solo la borra su autor o un administrador.
+- La app declara una política de seguridad de contenido (CSP): solo carga código de su propio sitio y solo habla con script.google.com.
+- Recomendación: usa códigos de personal largos (8 o más caracteres, no consecutivos) y desactiva con NO a quien deje el proyecto.
+
+### Conexionado: lista, bloqueo y metas (v1.20.0)
+- Una punta (FROM o TO) con STATUS IMPUTADO queda bloqueada para todos. Solo un administrador la puede desbloquear con el botón Desbloquear de esa tarjeta; el servidor sigue rechazando a quien no es administrador.
+- Buscar en Conexionado: filtros 0 %, 50 % y 100 % (cuántas puntas están imputadas) y la opción de cables nuevos del CC_SCHEDULE (los de tu disciplina que aún no tienen fila en CONEXIONADO).
+- Lista de conexionado (menú Conexionado, Trabajo, Lista): se arma con Añadir o Añadir los N. Se manda a Excel, a la pestaña LISTA_CONEXIONADO del Sheet (nombre cambiable con `cxSheetName`) o a un PDF de trabajo. Los cables nuevos llevan los datos del CC_SCHEDULE que coinciden por nombre con las columnas de CONEXIONADO.
+- Las listas solo pueden escribir en pestañas ESCANEOS* o LISTA_*.
+- Resumen de Conexionado: sin Estado por extremo; el gráfico semanal cuenta puntas conectadas (From + To) con meta de 50 (`metaConexion` en config.js).
+- Resumen de Cableado: la meta es 3000 m por semana (tendido + coil). Después de Metros por semana hay una tabla por semana con cables por status actual y metros de Tendido y Coil.
+
+## v1.21.0
+- Biblioteca: nuevas carpetas de sistemas FDS, HVAC, Tierra y Procesos (Drive: CableScan_PDF_FDS, _HVAC, _Tierra, _Procesos). Vuelve a ejecutar `autorizar` en Apps Script y reimplementa para crearlas.
+- Conexionado: campos verdes por llenar; al llenarse cambian a azul.
+- Resumen: KPIs y columnas rellenan el espacio sin huecos; "Reporte última semana" pasa a la columna izquierda.
+- Menú: "Herramientas" pasa a llamarse "Ajustes"; nuevo grupo "Herramientas" con la Biblioteca.
+- Lista de trabajo de Conexionado: el usuario elige las columnas y su orden en el PDF (como en Cableado).
+- Historial de Conexionado: se guarda en la pestaña CONEXIONADO_LOG; solo el administrador deshace cambios.
+- Ficha de Conexionado: botón 'Elegir campos' para mostrar solo los datos que quieras (se recuerda en el dispositivo).
+
+## v1.22.0
+- Conexionado: los datos que llenan los usuarios son "avances de campo". NO modifican la hoja CONEXIONADO: se guardan en CONEXIONADO_LOG con estado Pendiente (columnas nuevas estado, revisado_por, fecha_revision) y la app los muestra encima de la tabla.
+- Pestaña "Por imputar" en Buscar: filtra los cables con avances pendientes; PDF de avances; el administrador los marca Imputado o Descartado (por cable o todos los filtrados).
+- Lista de trabajo en PDF: anchos medidos por columna, sin texto vertical.
+- Modo oscuro: los campos llenados se leen bien.
+
+## v1.23.0
+- Conexionado > Buscar: "Buscar en" y "Filtrar por columna" como en Cableado (colfilter.js, reutilizable).
+- Conexionado: Deshacer para quien reportó el avance y para el administrador (acción undoAvance, estado Deshecho). Filtro "Quién lo reportó" en "Por imputar".
+- Cableado > Cambios del personal (nueva ventana): filtra status de campo y notas por estado (por imputar / imputados), tipo y persona; el administrador los marca Imputado (columnas nuevas revision, revisado_por, fecha_revision en NOTAS); PDF; Deshacer para el autor y el administrador.
+- Herramientas > Almacén: lee ENTRADA_ALM_BW y SALIDA_ALM_BW. Vistas En almacén (stock = entradas - salidas por código), Entradas y Salidas, con búsqueda, filtros por columna y Excel. Si no reconoce las columnas de código/cantidad se eligen en "Columnas del stock".
+
+## v1.24.0 — avisos
+- Insignias en el menú con los cambios por imputar (Cableado > Cambios, Conexionado > Buscar) y punto en el botón del menú en móvil.
+- Aviso del sistema (Ajustes > Avisos, solo administrador): con la app abierta o en segundo plano avisa de cambios nuevos; al tocarlo abre directo la pantalla (#cambios, #conex, #almacen).
+- Aviso por correo con la app cerrada: en apps-script.gs rellena AVISO_EMAIL y APP_URL y ejecuta una vez `instalarAvisos`. Avisa de cambios del personal, movimientos nuevos del almacén y bloqueos de seguridad (se elige en AVISOS). `quitarAvisos` los desactiva.
+- El token de administrador ahora viaja en todas las acciones de escritura (marcar imputado, deshacer, editar punta imputada).
