@@ -209,3 +209,6 @@ La clave `DRAGADOS-ADMIN` va en config.js, que es público en GitHub Pages: no e
 - Aviso del sistema (Ajustes > Avisos, solo administrador): con la app abierta o en segundo plano avisa de cambios nuevos; al tocarlo abre directo la pantalla (#cambios, #conex, #almacen).
 - Aviso por correo con la app cerrada: en apps-script.gs rellena AVISO_EMAIL y APP_URL y ejecuta una vez `instalarAvisos`. Avisa de cambios del personal, movimientos nuevos del almacén y bloqueos de seguridad (se elige en AVISOS). `quitarAvisos` los desactiva.
 - El token de administrador ahora viaja en todas las acciones de escritura (marcar imputado, deshacer, editar punta imputada).
+
+## v1.24.1
+- Solo sube la versión para comprobar que la app se actualiza.
