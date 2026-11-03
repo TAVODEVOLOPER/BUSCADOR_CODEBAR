@@ -1,6 +1,6 @@
 /* Biblioteca de PDF útiles del proyecto: isométricos de bandeja y transit, ordenados por carpeta (subcarpetas de Drive) */
 const LB = { q: '', tipo: '', open: new Set() };
-const LB_T = { iso: 'Isométrico de bandeja', transit: 'Transit', sep: 'Planos de separadores', fds: 'FDS', hvac: 'HVAC', tierra: 'Tierra', proc: 'Procesos' };
+const LB_T = { iso: 'Isométrico de bandeja', transit: 'Transit', sep: 'Planos de separadores', fds: 'FDS', hvac: 'HVAC', tierra: 'Tierra', proc: 'Procesos', heat: 'Heat Tracing' };
 const lbNat = (a, b) => a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' });
 
 function renderLibrary() {

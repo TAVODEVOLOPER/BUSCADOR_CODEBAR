@@ -55,7 +55,14 @@
         <p class="ssub">Trabajo</p>
         <button class="snav" data-tab="clista"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Lista</span><b class="count cxcount" data-n="0">0</b></button>
         <p class="ssub">Avance</p>
+        <button class="snav" data-tab="ccambios"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l5 5L20 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Cambios</span></button>
         <button class="snav" data-tab="cresumen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Resumen</span></button>
+      </details>
+      <details class="sgrp sis" data-mod="sis">
+        <summary><i class="pip"></i>Sistemas</summary>
+        <p class="ssub">FDS, HVAC, Procesos, VESDA, Tierra</p>
+        <button class="snav" data-tab="sresumen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Resumen semanal</span></button>
+        <button class="snav" data-tab="sdetalle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Detalle</span></button>
       </details>
       <details class="sgrp lib">
         <summary><i class="pip"></i>Herramientas</summary>
@@ -279,6 +286,22 @@
         <section id="tab-almacen" class="panel alm" aria-label="Almacén">
           <h2 class="ptitle">Almacén <small id="lbInfoAlm"></small></h2>
           <div id="almacen"></div>
+        </section>
+
+        <!-- CAMBIOS DE CONEXIONADO -->
+        <section id="tab-ccambios" class="panel" aria-label="Cambios del personal en conexionado">
+          <h2 class="ptitle">Cambios en conexionado</h2>
+          <div id="ccambios"></div>
+        </section>
+
+        <!-- SISTEMAS -->
+        <section id="tab-sresumen" class="panel" aria-label="Resumen semanal por sistemas">
+          <h2 class="ptitle">Avance por sistemas <small id="svInfo"></small></h2>
+          <div id="sResumen"></div>
+        </section>
+        <section id="tab-sdetalle" class="panel" aria-label="Detalle por sistemas">
+          <h2 class="ptitle">Detalle por sistemas</h2>
+          <div id="sDetalle"></div>
         </section>
 
         <!-- CAMBIOS DEL PERSONAL -->
@@ -516,6 +539,8 @@
 <script src="cx.js"></script>
 <script src="cxlist.js"></script>
 <script src="changes.js"></script>
+<script src="cxchanges.js"></script>
+<script src="sistemas.js"></script>
 <script src="alm.js"></script>
 <script src="avisos.js"></script>
 </body>

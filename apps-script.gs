@@ -76,7 +76,17 @@ var H_NOTAS = ['id', 'tag', 'nota', 'fecha', 'autor', 'estado', 'revision', 'rev
 var HOJA_ALM_IN = 'ENTRADA_ALM_BW';   // ingreso de materiales, equipos e insumos al almacén
 var HOJA_ALM_OUT = 'SALIDA_ALM_BW';   // salida de materiales, equipos e insumos del almacén
 var HOJA_PERSONAL = 'PERSONAL';
-var H_PERSONAL = ['codigo', 'nombre', 'cargo', 'activo', 'editar_notas', 'editar_conexionado', 'admin'];
+var H_PERSONAL = ['codigo', 'nombre', 'cargo', 'activo', 'editar_notas', 'editar_conexionado', 'admin', 'sistemas'];
+/* sistemas: lista separada por comas con lo que puede ver esa persona. Valores: CABLEADO, CONEXIONADO, FDS, HVAC, PROCESOS, VESDA, TIERRA, HEAT TRACING, ALMACEN. Vacío = todo. */
+var SIS_PDF = { pulling: 'CABLEADO', iso: 'CABLEADO', transit: 'CABLEADO', sep: 'CABLEADO', fds: 'FDS', hvac: 'HVAC', tierra: 'TIERRA', proc: 'PROCESOS', heat: 'HEAT' };
+var SIS_AVANCE = ['FDS', 'HVAC', 'PROCESOS', 'VESDA', 'TIERRA'];
+var HOJA_AV_PREF = 'APP_AVANCE_';   // pestañas donde la app guarda las hojas AVANCE_ del Excel
+function sisNorm_(x) {
+  x = String(x || '').toUpperCase().replace(/[ÁÀ]/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I').replace(/Ó/g, 'O').replace(/Ú/g, 'U').replace(/[^A-Z]/g, '');
+  if (/^PROCESO/.test(x)) return 'PROCESOS'; if (/^HEAT/.test(x)) return 'HEAT'; if (/^(TIERRA|EARTH)/.test(x)) return 'TIERRA';
+  if (/^CONEX/.test(x)) return 'CONEXIONADO'; if (/^ALMAC/.test(x)) return 'ALMACEN'; return x;
+}
+function sisOk_(me, adm, s) { return adm || !me || !me.sis || !me.sis.length || me.sis.indexOf(s) >= 0; }
 var HOJA_CONEX = 'CONEXIONADO';          // pestaña del sistema de conexionado; las columnas con cabecera verde (#00B050) son las editables
 var HOJA_CONEX_LOG = 'CONEXIONADO_LOG';
 var H_CONEX_LOG = ['id', 'fecha', 'cable', 'columna', 'antes', 'despues', 'autor', 'estado', 'revisado_por', 'fecha_revision'];
@@ -113,6 +123,9 @@ function handle_(p) {
     if (p.action !== 'ping' && !list.length && !ABIERTO_SIN_PERSONAL && !adm)
       return out_({ ok: false, error: 'Falta rellenar la pestaña PERSONAL con al menos un código. Mientras esté vacía, la app no sirve datos' });
     if (p.action === 'login' && me) logSeg_('entrada', me.nombre + (adm ? ' (admin)' : ''));
+    var need = { data: 'CABLEADO', schedule: 'CABLEADO', routes: 'CABLEADO', ccdata: 'CABLEADO', file: 'CABLEADO', addNote: 'CABLEADO', delNote: 'CABLEADO', upload: 'CABLEADO', delFile: 'CABLEADO', scans: 'CABLEADO', clearScans: 'CABLEADO', conex: 'CONEXIONADO', setConex: 'CONEXIONADO', undoAvance: 'CONEXIONADO', marcarAvances: 'CONEXIONADO', almacen: 'ALMACEN' }[p.action];
+    if (need && !sisOk_(me, adm, need)) return out_({ ok: false, error: 'Tu código no tiene acceso a ' + need });
+    p.me = me;   // lo usan las lecturas para filtrar por sistema
     var canEdit = !list.length || adm || !!(me && me.notas);
     var canConex = !list.length || adm || !!(me && me.conex);
     if (p.action === 'setConex' || p.action === 'undoAvance') {
@@ -126,21 +139,22 @@ function handle_(p) {
       p.adm = adm; p.ident = !!me;   // el borrado por autor solo se exige si hay personal identificado
     }
     switch (p.action) {
-      case 'login': return out_({ ok: true, open: !list.length, nombre: me ? me.nombre : '', cargo: me ? me.cargo : '', notas: canEdit, conex: canConex, admin: adm });
+      case 'login': return out_({ ok: true, open: !list.length, nombre: me ? me.nombre : '', cargo: me ? me.cargo : '', notas: canEdit, conex: canConex, admin: adm, sis: adm || !me ? [] : me.sis });
       case 'ping': return out_({ ok: true, admin: isAdmin_(p) });
       case 'data': return out_(getData_(p.hash));
-      case 'sync': return out_(getSync_(p.pdfHash, { nombre: me ? me.nombre : '', notas: canEdit, conex: canConex, admin: adm }));
+      case 'sync': return out_(getSync_(p.pdfHash, { nombre: me ? me.nombre : '', notas: canEdit, conex: canConex, admin: adm, sis: adm || !me ? [] : me.sis }, adm, me));
+      case 'avance': return out_(getAvance_(p.hash, adm, me));
       case 'schedule': return out_(getSchedule_(p.hash));
       case 'routes': return out_(getRoutes_(p.hash));
       case 'ccdata': return out_(getCC_(p.hash));
       case 'conex': return out_(getConex_(p.hash));
       case 'almacen': return out_(getAlmacen_(p.hash));
       case 'file': return out_(getFile_(p.uid));
-      case 'pdf': return out_(getPdf_(p.id));
-      case 'revNotas': case 'marcarAvances':
-        if (!adm) throw new Error('Solo el administrador puede marcar avances');
+      case 'pdf': return out_(getPdf_(p.id, adm, me));
+      case 'revNotas': case 'marcarAvances': case 'subirAvance':
+        if (!adm) throw new Error('Solo el administrador puede hacer esto');
       case 'uploadPdf': case 'delPdf':
-        if (p.action !== 'marcarAvances' && p.action !== 'revNotas')
+        if (p.action !== 'marcarAvances' && p.action !== 'revNotas' && p.action !== 'subirAvance')
         if (!adm) throw new Error(ADMIN_TOKEN ? 'Clave de administrador incorrecta' : 'Subir PDF desde la app está desactivado: pon un ADMIN_TOKEN en el script');
       case 'addNote': case 'delNote': case 'upload': case 'delFile': case 'scans': case 'clearScans': case 'setConex': case 'undoAvance':
         var lock = LockService.getScriptLock();
@@ -159,7 +173,7 @@ function personal_() {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HOJA_PERSONAL);
   if (!sh || sh.getLastRow() < 2) return [];
   return rows_(sh).filter(function (r) { return String(r[0]).trim(); }).map(function (r) {
-    return { codigo: String(r[0]).trim().toUpperCase(), nombre: String(r[1]).trim(), cargo: String(r[2] || '').trim(), activo: yes_(r[3]), notas: yes_(r[4]), conex: yes_(r[5]), admin: yes_(r[6]) };
+    return { codigo: String(r[0]).trim().toUpperCase(), nombre: String(r[1]).trim(), cargo: String(r[2] || '').trim(), activo: yes_(r[3]), notas: yes_(r[4]), conex: yes_(r[5]), admin: yes_(r[6]), sis: String(r[7] || '').split(/[,;\/]+/).map(sisNorm_).filter(String) };
   });
 }
 function findPerson_(list, code) {
@@ -243,7 +257,7 @@ function namedFolder_(propKey, name) {
   return f;
 }
 function fotosFolder_() { return namedFolder_('FOLDER_FOTOS', CARPETA_FOTOS); }
-var CARPETAS_SIS = { fds:['FOLDER_FDS','CableScan_PDF_FDS'], hvac:['FOLDER_HVAC','CableScan_PDF_HVAC'], tierra:['FOLDER_TIERRA','CableScan_PDF_Tierra'], proc:['FOLDER_PROC','CableScan_PDF_Procesos'] };
+var CARPETAS_SIS = { fds:['FOLDER_FDS','CableScan_PDF_FDS'], hvac:['FOLDER_HVAC','CableScan_PDF_HVAC'], tierra:['FOLDER_TIERRA','CableScan_PDF_Tierra'], proc:['FOLDER_PROC','CableScan_PDF_Procesos'], heat:['FOLDER_HEAT','CableScan_PDF_HeatTracing'] };
 function sisFolder_(t) { return namedFolder_(CARPETAS_SIS[t][0], CARPETAS_SIS[t][1]); }
 function isoFolder_() { return namedFolder_('FOLDER_ISO', CARPETA_ISO); }
 function transitFolder_() { return namedFolder_('FOLDER_TRANSIT', CARPETA_TRANSIT); }
@@ -598,6 +612,41 @@ function avisarCambios() {
   MailApp.sendEmail({ to: to, subject: 'Cable Scan BW04: ' + resumen.join(', '), htmlBody: '<div style="font-family:Arial,sans-serif">' + bloques.join('') + '<p style="color:#666">Aviso automático de Cable Scan, ' + Utilities.formatDate(new Date(), tz, 'dd/MM/yyyy HH:mm') + '</p></div>' });
 }
 
+/* ---------- avance por sistemas (FDS, HVAC, PROCESOS, VESDA, TIERRA) ----------
+   El administrador sube el Excel desde la app; la app envía solo las hojas AVANCE_* (valores ya calculados) y aquí se guardan en pestañas APP_AVANCE_*. */
+function subirAvance_(p) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), tz = Session.getScriptTimeZone(), hechas = [], n = 0;
+  SIS_AVANCE.forEach(function (k) {
+    var d = p.sistemas && p.sistemas[k]; if (!d || !d.cols || !d.cols.length) return;
+    var name = HOJA_AV_PREF + k, sh = ss.getSheetByName(name) || ss.insertSheet(name);
+    var w = d.cols.length, rows = (d.rows || []).slice(0, 5000).map(function (r) {
+      var o = []; for (var c = 0; c < w; c++) { var v = r[c]; o.push(typeof v === 'number' ? v : safe_(v == null ? '' : v, 500)); } return o;
+    });
+    sh.clearContents();
+    sh.getRange(1, 1, 1, w).setValues([d.cols.map(function (x) { return safe_(x, 100); })]);
+    if (rows.length) sh.getRange(2, 1, rows.length, w).setValues(rows);
+    hechas.push(k + ' (' + rows.length + ')'); n += rows.length;
+  });
+  if (!hechas.length) throw new Error('El archivo no trae ninguna hoja AVANCE_FDS, AVANCE_HVAC, AVANCE_PROCESOS, AVANCE_VESDA o AVANCE_TIERRA');
+  PropertiesService.getScriptProperties().setProperty('AVANCE_INFO', JSON.stringify({ fecha: Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm'), autor: String(p.author || ''), archivo: String(p.archivo || '').slice(0, 120) }));
+  logSeg_('avance subido', hechas.join(', ') + ' por ' + (p.author || ''));
+  return { ok: true, hojas: hechas, filas: n };
+}
+function getAvance_(clientHash, adm, me) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), out = {}, info = {};
+  SIS_AVANCE.forEach(function (k) {
+    if (!sisOk_(me, adm, k)) return;
+    var sh = ss.getSheetByName(HOJA_AV_PREF + k); if (!sh || sh.getLastRow() < 1) return;
+    var v = sh.getDataRange().getValues(), cols = v[0].map(function (x) { return String(x); }), rows = [];
+    for (var i = 1; i < v.length; i++) { if (String(v[i][0]).trim()) rows.push(v[i].map(function (x) { return typeof x === 'number' ? x : String(x); })); }
+    out[k] = { cols: cols, rows: rows };
+  });
+  try { info = JSON.parse(PropertiesService.getScriptProperties().getProperty('AVANCE_INFO') || '{}'); } catch (e) { info = {}; }
+  var hash = md5_(JSON.stringify([out, info]));
+  if (clientHash && clientHash === hash) return { ok: true, same: true, hash: hash };
+  return { ok: true, hash: hash, sistemas: out, info: info };
+}
+
 /* ---------- lecturas ---------- */
 function getData_(clientHash) {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HOJA_DATOS);
@@ -768,7 +817,7 @@ function getCC_(clientHash) {
   return { ok: true, hash: hash, total: total, cols: cols, dict: dict, data: data };
 }
 
-function getSync_(pdfHash, me) {   // me: { nombre, notas, conex, admin }
+function getSync_(pdfHash, me, adm, person) {   // me: { nombre, notas, conex, admin, sis }
   var notes = rows_(sheet_(HOJA_NOTAS, H_NOTAS)).filter(function (r) { return r[0]; }).map(function (r) {
     return { id: String(r[0]), tag: String(r[1]), text: String(r[2]), date: String(r[3]), author: String(r[4]), estado: String(r[5] || ''), rev: String(r[6] || '') };
   });
@@ -777,7 +826,8 @@ function getSync_(pdfHash, me) {   // me: { nombre, notas, conex, admin }
   });
   var pdfs = rows_(sheet_(HOJA_PDF, H_PDF)).filter(function (r) { return r[0]; }).map(function (r) {
     return { id: String(r[0]), name: String(r[1]), date: String(r[2]), tipo: String(r[3] || 'pulling'), carpeta: String(r[4] || '') };
-  });
+  }).filter(function (x) { return sisOk_(person, adm, SIS_PDF[x.tipo] || 'CABLEADO'); });
+  if (!sisOk_(person, adm, 'CABLEADO')) { notes = []; files = []; }
   var ph = md5_(JSON.stringify(pdfs));
   var res = { ok: true, notes: notes, files: files, pdfHash: ph, me: me };
   if (pdfHash && pdfHash === ph) res.pdfSame = true; else res.pdfs = pdfs;
@@ -793,9 +843,11 @@ function getFile_(uid) {
   return { ok: true, mime: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()) };
 }
 
-function getPdf_(id) {
-  var sh = sheet_(HOJA_PDF, H_PDF);
-  if (!findRow_(sh, id)) throw new Error('PDF no encontrado en el índice (¿se actualizó el índice?)');
+function getPdf_(id, adm, me) {
+  var sh = sheet_(HOJA_PDF, H_PDF), cel = findRow_(sh, id);
+  if (!cel) throw new Error('PDF no encontrado en el índice (¿se actualizó el índice?)');
+  var tp = String(sh.getRange(cel.getRow(), 4).getValue() || 'pulling');
+  if (!sisOk_(me, adm, SIS_PDF[tp] || 'CABLEADO')) throw new Error('Tu código no tiene acceso a este PDF');
   var blob = DriveApp.getFileById(id).getBlob();
   var bytes = blob.getBytes();
   if (bytes.length > MAX_PDF_BYTES) throw new Error('El PDF pesa más de 30 MB y no se puede abrir desde la app');
@@ -845,7 +897,7 @@ function write_(p) {
       var bytes = Utilities.base64Decode(p.data);
       if (bytes.length > MAX_PDF_BYTES) throw new Error('El PDF pesa más de 30 MB');
       var base = String(p.name || '').replace(/\.pdf$/i, '').replace(/[\/\\]+/g, '-').trim();
-      var ptipo = /^(iso|transit|sep|fds|hvac|tierra|proc)$/.test(p.tipo) ? p.tipo : 'pulling';
+      var ptipo = /^(iso|transit|sep|fds|hvac|tierra|proc|heat)$/.test(p.tipo) ? p.tipo : 'pulling';
       var pname, dest;
       if (ptipo === 'pulling') {
         if (!p.tag) throw new Error('Falta el tag del cable');
@@ -887,6 +939,9 @@ function write_(p) {
 
     case 'marcarAvances':
       return marcarAvances_(p);
+
+    case 'subirAvance':
+      return subirAvance_(p);
 
     case 'undoAvance':
       return undoAvance_(p);

@@ -471,8 +471,8 @@ async function switchCam() {
 })();
 
 /* ---------- Pestañas ---------- */
-const TAB_MOD = { scan: 'cab', search: 'cab', list: 'cab', routes: 'cab', library: 'cab', almacen: 'cab', cambios: 'cab', stats: 'cab', cbuscar: 'con', clista: 'con', cresumen: 'con' };
-const MOD_DEFAULT = { cab: 'scan', con: 'cbuscar' };
+const TAB_MOD = { scan: 'cab', search: 'cab', list: 'cab', routes: 'cab', library: 'cab', almacen: 'cab', cambios: 'cab', stats: 'cab', cbuscar: 'con', clista: 'con', cresumen: 'con', ccambios: 'con', sresumen: 'sis', sdetalle: 'sis' };
+const MOD_DEFAULT = { cab: 'scan', con: 'cbuscar', sis: 'sresumen' };
 $$('.sgrp').forEach(g => g.addEventListener('toggle', () => { if (g.open) $$('.sgrp').forEach(o => { if (o !== g) o.open = false; }); }));
 function navOpen(v) { $('#app').classList.toggle('nav-open', !!v); $('#btnNav').setAttribute('aria-expanded', !!v); }
 $('#btnNav').addEventListener('click', () => navOpen(!$('#app').classList.contains('nav-open')));
@@ -497,6 +497,9 @@ function setTab(name) {
   if (name === 'library' && typeof renderLibrary === 'function') renderLibrary();
   if (name === 'almacen' && typeof almOnOpen === 'function') almOnOpen();
   if (name === 'cambios' && typeof renderCambios === 'function') renderCambios();
+  if (name === 'ccambios' && typeof renderCxCambios === 'function') renderCxCambios();
+  if (name === 'sresumen' && typeof renderSvResumen === 'function') { renderSvResumen(); if (typeof pullSv === 'function') pullSv(true); }
+  if (name === 'sdetalle' && typeof renderSvDetalle === 'function') renderSvDetalle();
 }
 $$('.tab,.snav[data-tab]').forEach(t => { t.dataset.mod = TAB_MOD[t.dataset.tab]; t.addEventListener('click', () => setTab(t.dataset.tab)); });
 $$('.snav[data-proxy]').forEach(b => b.addEventListener('click', () => navOpen(false)));
@@ -1338,9 +1341,16 @@ async function openSettings() {
 }
 /* Ajustes solo para administradores (columna admin de PERSONAL) o mientras no haya nadie identificado */
 const canSettings = () => !cloud.on() || !LS.get('userCode', '') || LS.get('userAdmin', false);
+/* sistemas de la persona (columna sistemas de PERSONAL). Vacío = todo. Administradores y sin identificar: todo */
+const SYS_ALL = ['CABLEADO', 'CONEXIONADO', 'FDS', 'HVAC', 'PROCESOS', 'VESDA', 'TIERRA', 'HEAT', 'ALMACEN'];
+function sysOk(k) { if (!cloud.on() || !LS.get('userCode', '') || LS.get('userAdmin', false)) return true; const l = LS.get('userSys', []); return !l || !l.length || l.includes(k); }
+const SYS_TAB = { cab: 'CABLEADO', con: 'CONEXIONADO' };
 const canConex = () => !cloud.on() || LS.get('userConex', false) || LS.get('userAdmin', false) || !LS.get('userCode', '');
 function paintAccess() {
   const ok = canSettings();
+  $$('.sgrp[data-mod]').forEach(g => { const m = g.dataset.mod; g.hidden = m === 'sis' ? !['FDS', 'HVAC', 'PROCESOS', 'VESDA', 'TIERRA'].some(sysOk) : !sysOk(SYS_TAB[m]); });
+  $$('.snav[data-tab="almacen"]').forEach(b => { b.hidden = !sysOk('ALMACEN'); });
+  { const cur = $('#app').dataset.mod, hid = g => g && g.hidden; if (cur && hid($('.sgrp[data-mod="' + cur + '"]'))) { const first = ['cab', 'con', 'sis'].find(m => !hid($('.sgrp[data-mod="' + m + '"]'))); if (first) setTab(MOD_DEFAULT[first]); } }
   $$('#btnSettings,.snav[data-proxy="btnSettings"]').forEach(b => { b.hidden = !ok; });
   const n = LS.get('userName', '') || LS.get('userCode', '');
   const who = n ? `<b>${esc(n)}</b><small>${LS.get('userAdmin', false) ? 'Administrador' : LS.get('userNotes', true) !== false ? 'Puede editar' : 'Solo lectura'}</small>` : '<b>Sin identificar</b>';
@@ -1550,7 +1560,7 @@ async function ensureLogin() {
   try { await apiGet('login'); } catch { /* si el servidor pide código, apiGet ya abrió la pantalla; sin cobertura se sigue */ }
 }
 function loginNeeded(msg) {
-  LS.set('userCode', ''); LS.set('userName', ''); LS.set('userAdmin', false); LS.set('userConex', false); paintLogout(); paintAccess();
+  LS.set('userCode', ''); LS.set('userName', ''); LS.set('userAdmin', false); LS.set('userConex', false); LS.set('userSys', []); paintLogout(); paintAccess();
   $('#loginErr').textContent = LS.get('userSeen', false) ? (msg || '') : '';
   $('#loginModal').hidden = false; setTimeout(() => $('#loginCode').focus(), 50);
 }
@@ -1560,7 +1570,7 @@ $('#loginForm').addEventListener('submit', async e => {
   $('#loginGo').disabled = true; $('#loginErr').textContent = '';
   try {
     const j = await apiGet('login', { user: code });
-    LS.set('userCode', code); LS.set('userName', j.nombre || ''); LS.set('userNotes', !!j.notas); LS.set('userConex', !!j.conex); LS.set('userAdmin', !!j.admin); LS.set('userSeen', true); paintLogout(); paintAccess();
+    LS.set('userCode', code); LS.set('userName', j.nombre || ''); LS.set('userNotes', !!j.notas); LS.set('userConex', !!j.conex); LS.set('userAdmin', !!j.admin); LS.set('userSys', j.sis || []); LS.set('userSeen', true); paintLogout(); paintAccess();
     $('#loginModal').hidden = true; $('#loginCode').value = '';
     toast(j.nombre ? 'Hola, ' + j.nombre : 'Sesión iniciada');
     if (DATA) { renderCable && current >= 0 && renderCable(); }
@@ -1606,7 +1616,7 @@ async function syncCloud(silent) {
 
     if (typeof cxSync === 'function') await cxSync(false);
     const s = await apiGet('sync', PDFHASH ? { pdfHash: PDFHASH } : {});
-    if (s.me) { LS.set('userConex', !!s.me.conex); LS.set('userAdmin', !!s.me.admin); paintAccess(); LS.set('userNotes', !!s.me.notas); if (s.me.nombre) LS.set('userName', s.me.nombre); }
+    if (s.me) { LS.set('userConex', !!s.me.conex); LS.set('userAdmin', !!s.me.admin); LS.set('userSys', s.me.sis || []); paintAccess(); LS.set('userNotes', !!s.me.notas); if (s.me.nombre) LS.set('userName', s.me.nombre); }
     if (s.pdfs) { setPdfs(s.pdfs, s.pdfHash); await DB.put('meta', { hash: s.pdfHash, list: s.pdfs }, 'pdfs'); if ($('#tab-library').classList.contains('active')) renderLibrary(); }
     const notes = await DB.all('notes'), files = await DB.all('files');
     const nUid = new Set(notes.map(x => x.uid)), fUid = new Set(files.map(x => x.uid));

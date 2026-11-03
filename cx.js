@@ -390,7 +390,7 @@ function renderCxStats() {
 
 function cxRepaint() {
   const m = $('#app').dataset.tab;
-  if (m === 'cbuscar') renderCxSearch(); else if (m === 'cresumen') renderCxStats();
+  if (m === 'cbuscar') renderCxSearch(); else if (m === 'cresumen') renderCxStats(); else if (m === 'ccambios' && typeof renderCxCambios === 'function') renderCxCambios();
   if (CX.sel && $('#view').classList.contains('open') && !(document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName) && $('#vBody').contains(document.activeElement))) renderCx();
 }
 

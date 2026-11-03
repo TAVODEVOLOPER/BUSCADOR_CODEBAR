@@ -360,10 +360,10 @@ td .x{min-width:36px;min-height:36px;border:0;background:none;color:var(--bad);f
   .toast{bottom:24px}
 
   .detail{display:flex;position:static;flex:1;min-width:0;z-index:auto;animation:none}
-  .app[data-tab="stats"] .rail,.app[data-tab="routes"] .rail,.app[data-tab="cresumen"] .rail,.app[data-tab="almacen"] .rail,.app[data-tab="cambios"] .rail{flex:1;width:auto;min-width:0}
-  .app[data-tab="stats"] .detail,.app[data-tab="routes"] .detail,.app[data-tab="cresumen"] .detail,.app[data-tab="almacen"] .detail,.app[data-tab="cambios"] .detail{display:none}
-  .app[data-tab="almacen"] .panel,.app[data-tab="cambios"] .panel{max-width:1240px;margin:0}
-  #cambios .rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:10px}
+  .app[data-tab="stats"] .rail,.app[data-tab="routes"] .rail,.app[data-tab="cresumen"] .rail,.app[data-tab="almacen"] .rail,.app[data-tab="cambios"] .rail,.app[data-tab="ccambios"] .rail,.app[data-tab="sresumen"] .rail,.app[data-tab="sdetalle"] .rail{flex:1;width:auto;min-width:0}
+  .app[data-tab="stats"] .detail,.app[data-tab="routes"] .detail,.app[data-tab="cresumen"] .detail,.app[data-tab="almacen"] .detail,.app[data-tab="cambios"] .detail,.app[data-tab="ccambios"] .detail,.app[data-tab="sresumen"] .detail,.app[data-tab="sdetalle"] .detail{display:none}
+  .app[data-tab="almacen"] .panel,.app[data-tab="cambios"] .panel,.app[data-tab="ccambios"] .panel,.app[data-tab="sresumen"] .panel,.app[data-tab="sdetalle"] .panel{max-width:1240px;margin:0}
+  #cambios .rows,#ccambios .rows,#sDetalle .rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:10px}
   .detail.open{animation:none}
   #vBack{display:none}
   .detail-head{justify-content:flex-end;min-height:56px;padding-top:8px;border-bottom:1px solid var(--hair);background:var(--bg);border-bottom-color:transparent}
@@ -821,3 +821,9 @@ body{background:var(--bg) url(bg-m.jpg) center/cover fixed no-repeat}
 #btnNav.has-new{position:relative}
 #btnNav.has-new::after{content:"";position:absolute;top:8px;right:8px;width:10px;height:10px;border-radius:50%;background:var(--cy);box-shadow:0 0 0 2px var(--bg,#0b1b27)}
 .chk{display:flex;align-items:flex-start;gap:10px;min-height:44px;font-weight:600}.chk input{width:22px;height:22px;flex:none;margin-top:2px}
+
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+#sResumen .tw{overflow-x:auto}
+#sResumen .tbl{width:100%;border-collapse:collapse;font-size:.88rem}
+#sResumen .tbl th,#sResumen .tbl td{padding:6px 10px;border-bottom:1px solid var(--line,rgba(128,128,128,.25));text-align:right;white-space:nowrap}
+#sResumen .tbl th:first-child,#sResumen .tbl td:first-child{text-align:left}

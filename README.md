@@ -212,3 +212,10 @@ La clave `DRAGADOS-ADMIN` va en config.js, que es público en GitHub Pages: no e
 
 ## v1.24.1
 - Solo sube la versión para comprobar que la app se actualiza.
+
+## v1.25.0: sistemas, acceso por sistema, Cambios en Conexionado, Heat Tracing
+- Conexionado > Cambios (ventana nueva): avances de campo del personal con filtros por estado (por imputar / imputados), persona, campo y texto. El administrador marca imputado; el autor y el administrador pueden deshacer lo pendiente; PDF con casilla de imputado.
+- Biblioteca: carpeta Heat Tracing (Drive: CableScan_PDF_HeatTracing). Vuelve a ejecutar `autorizar` y reimplementa el script.
+- PERSONAL: columna nueva `sistemas` (la 8). Lista separada por comas con: CABLEADO, CONEXIONADO, FDS, HVAC, PROCESOS, VESDA, TIERRA, HEAT TRACING, ALMACEN. Vacío = acceso a todo. El administrador siempre ve todo. El servidor lo exige (datos, notas, PDF y avance), no solo la pantalla.
+- Sistemas (grupo nuevo): Resumen semanal con gráficos y Detalle con filtros. Usa solo las hojas AVANCE_FDS, AVANCE_HVAC, AVANCE_PROCESOS, AVANCE_VESDA y AVANCE_TIERRA. Para actualizar, el administrador pulsa "Cargar Excel de avance" y elige el Excel completo: la app lee esas 5 hojas (valores ya calculados) y las guarda en pestañas APP_AVANCE_* del Sheet.
+- La semana es la del Excel (WEEKNUM, empieza en domingo).
